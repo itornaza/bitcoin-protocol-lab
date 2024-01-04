@@ -8,7 +8,6 @@ descriptor="tr($xpub/*)#q4q7qurj"
 
 # Get the 100th Taproot derived addresses array
 addresses=$(bitcoin-cli deriveaddresses "$descriptor" "[100,100]")
-echo $addresses
 
 # Get the lone address from the addresses array
 address=$(echo "$addresses" | jq -r '.[0]')
