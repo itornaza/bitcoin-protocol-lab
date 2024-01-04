@@ -8,6 +8,8 @@ descriptor="wsh(sortedmulti(1,$xpub/*))#vmu39q8q"
 
 # Get the 100th Taproot derived addresses array
 addresses=$(bitcoin-cli deriveaddresses "$descriptor" "[100, 100]")
+echo $addresses
 
 # Get the lone address from the addresses array
-echo "$addresses" | jq -r '.[]'
+# address=$(echo "$addresses" | jq -r '.[]')
+# echo "$address"
