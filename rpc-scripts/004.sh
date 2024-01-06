@@ -3,12 +3,19 @@
 
 xpub="xpub6Cx5tvq6nACSLJdra1A6WjqTo1SgeUZRFqsX5ysEtVBMwhCCRa4kfgFqaT2o1kwL3esB1PsYr3CUdfRZYfLHJunNWUABKftK2NjHUtzDms2"
 
-# Construct the descriptor
-descriptor="tr($xpub/*)#q4q7qurj"
+# Construct the descriptor without the checksum
+descriptor="tr($xpub/*)"
+
+# Compute the checksum
+info=$(bitcoin-cli getdescriptorinfo $descriptor)
+checksum="$(echo "$info" | jq -r '.checksum')"
+
+# Descriptor with the checksum appended
+descriptor="${descriptor}#${checksum}"
 
 # Get the 100th Taproot derived addresses array
 addresses=$(bitcoin-cli deriveaddresses "$descriptor" "[100,100]")
 
-# Get the lone address from the addresses array
+# # Get the lone address from the addresses array
 address=$(echo "$addresses" | jq -r '.[0]')
 echo $address
