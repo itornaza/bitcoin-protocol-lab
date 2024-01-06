@@ -10,4 +10,4 @@ witness=$(echo "$tx" | jq -r '.vin[0].txinwitness[]')
 # echo $witness 
 
 # Mannual extraction of the public key
-echo "025d524ac7ec6501d018d322334f142c7c11aa24b9cffec03161eca35a1e32a71f"
+echo 025d524ac7ec6501d018d322334f142c7c11aa24b9cffec03161eca35a1e32a71f
