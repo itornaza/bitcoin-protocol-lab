@@ -1,7 +1,5 @@
 # Find the address of an unspent output from a given block.
 
-# Expected: 1FPDNNmgwEnKuF7GQzSqUcVQdzSRhz4pgX
-
 blk_hash=$(bitcoin-cli getblockhash 123321)
 blk=$(bitcoin-cli getblock $blk_hash)
 txids=$(echo "$blk" | jq -r '.tx[]')
