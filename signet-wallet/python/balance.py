@@ -21,7 +21,7 @@ def base58_decode(base58_string: str) -> bytes:
 
     # Chop off the 32 checksum bits and return
     # BONUS POINTS: Verify the checksum!
-
+    pass
 
 # Deserialize the extended key bytes and return a JSON object
 # https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki#serialization-format
@@ -82,41 +82,41 @@ def bcli(cmd: str):
 # - Return a state object with all the derived keys and total wallet balance
 def recover_wallet_state(xprv: str):
     # Generate all the keypairs and witness programs to search for
-    privs = 
-    pubs = 
-    programs = 
+    # privs = 
+    # pubs = 
+    # programs = 
 
     # Prepare a wallet state data structure
-    state = {
-        "utxo": {},
-        "balance": 0,
-        "privs": privs,
-        "pubs": pubs,
-        "programs": programs
-    }
+    # state = {
+    #     "utxo": {},
+    #     "balance": 0,
+    #     "privs": privs,
+    #     "pubs": pubs,
+    #     "programs": programs
+    # }
 
     # Scan blocks 0-310
-    height = 310
-    for h in range(height + 1):
+    # height = 310
+    # for h in range(height + 1):
 
-        # Scan every tx in every block
-        for tx in txs:
-            # Check every tx input (witness) for our own compressed public keys.
-            # These are coins we have spent.
-            for inp in tx["vin"]:
+    #     # Scan every tx in every block
+    #     for tx in txs:
+    #         # Check every tx input (witness) for our own compressed public keys.
+    #         # These are coins we have spent.
+    #         for inp in tx["vin"]:
 
-                    # Remove this coin from our wallet state utxo pool
-                    # so we don't double spend it later
+    #                 # Remove this coin from our wallet state utxo pool
+    #                 # so we don't double spend it later
 
-            # Check every tx output for our own witness programs.
-            # These are coins we have received.
-            for out in tx["vout"]:
-                    # Add to our total balance
+    #         # Check every tx output for our own witness programs.
+    #         # These are coins we have received.
+    #         for out in tx["vout"]:
+    #                 # Add to our total balance
 
-                    # Keep track of this UTXO by its outpoint in case we spend it later
+    #                 # Keep track of this UTXO by its outpoint in case we spend it later
 
-    return state
-
+    # return state
+    pass
 
 if __name__ == "__main__":
     print(f"{WALLET_NAME} {recover_wallet_state(EXTENDED_PRIVATE_KEY)['balance']}")
