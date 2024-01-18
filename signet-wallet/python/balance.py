@@ -7,9 +7,10 @@ import hmac
 import json
 
 # Provided by administrator
-WALLET_NAME = "wallet_000"
+# Info from the email:
+# wpkh(CHANGEME_EXTENDED_PRIVATE_KEY/84h/1h/0h/0/*)#tj8algkg
+WALLET_NAME = "wallet_201"
 EXTENDED_PRIVATE_KEY = "CHANGEME_EXTENDED_PRIVATE_KEY"
-
 
 # Decode a base58 string into an array of bytes
 def base58_decode(base58_string: str) -> bytes:
@@ -31,25 +32,25 @@ def base58_decode(base58_string: str) -> bytes:
 # 32 bytes: the chain code
 # 33 bytes: the public key or private key data (serP(K) for public keys, 0x00 || ser256(k) for private keys)
 def deserialize_key(b: bytes) -> object:
-
+    pass
 
 # Derive the secp256k1 compressed public key from a given private key
 # BONUS POINTS: Implement ECDSA yourself and multiply you key by the generator point!
 def get_pub_from_priv(priv: bytes) -> bytes:
-
+    pass
 
 # Perform a BIP32 parent private key -> child private key operation
 # Return a JSON object with "key" and "chain_code" properties as bytes
 # https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki#user-content-Private_parent_key_rarr_private_child_key
 def derive_priv_child(key: bytes, chain_code: bytes, index: int, hardened: bool) -> object:
-
+    pass
 
 # Given an extended private key and a BIP32 derivation path,
 # compute the first 2000 child private keys.
 # Return an array of keys encoded as bytes.
 # The derivation path is formatted as an array of (index: int, hardened: bool) tuples.
 def get_wallet_privs(key: bytes, chain_code: bytes, path: List[Tuple[int, bool]]) -> List[bytes]:
-
+    pass
 
 # Derive the p2wpkh witness program (aka scriptPubKey) for a given compressed public key.
 # Return a bytes array to be compared with the JSON output of Bitcoin Core RPC getblock
@@ -57,7 +58,7 @@ def get_wallet_privs(key: bytes, chain_code: bytes, path: List[Tuple[int, bool]]
 # These are segwit version 0 pay-to-public-key-hash witness programs.
 # https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki#user-content-P2WPKH
 def get_p2wpkh_program(pubkey: bytes, version: int=0) -> bytes:
-
+    pass
 
 # Assuming Bitcoin Core is running and connected to signet using default datadir,
 # execute an RPC and return its value or error message.
