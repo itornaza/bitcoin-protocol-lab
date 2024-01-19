@@ -8,6 +8,7 @@ import json
 
 # My extra imports
 import base58
+from bip32utils import BIP32Key
 
 # Given:
 # wpkh(CHANGEME_EXTENDED_PRIVATE_KEY/84h/1h/0h/0/*)#tj8algkg
@@ -63,9 +64,6 @@ def base58_decode(base58_string: str) -> bytes:
 # 33 bytes: the public key or private key data (serP(K) for public keys, 
 #           0x00 || ser256(k) for private keys)
 def deserialize_key(b: bytes) -> object:
-
-    # Create a Python dictionary
-    # TODO Check if there are standard names for the dictionary keys
     data = {
         "version": b[:4].hex(),
         "depth": b[4:5].hex(),
@@ -74,31 +72,22 @@ def deserialize_key(b: bytes) -> object:
         "chain_code": b[13:46].hex(),
         "key": b[46:].hex()
     }
-
-    # Convert the dictionary to a JSON-formatted string
     json_object = json.dumps(data)
 
     if (VERBOSE):
         print("*** deserialize_key() ***\n") 
         print(json_object, "\n")
 
-    # Return the JSON object
     return json_object
 
 # Derive the secp256k1 compressed public key from a given private key
 # BONUS POINTS: Implement ECDSA yourself and multiply you key by the generator
 # point!
 def get_pub_from_priv(priv: bytes) -> bytes:
-    
-    # Create a signing key object from the private key
     signing_key = SigningKey.from_string(priv, curve=SECP256k1)
-
-    # Derive the public key from the private key
     public_key = signing_key.get_verifying_key()
-
-    # Get the public key in compressed format
     compressed_public_key = public_key.to_string("compressed")
-    
+
     if (VERBOSE):
         print("\n*** get_pub_from_priv() ***")
         print("\nCompressed public key: ", compressed_public_key.hex(), "\n")
@@ -109,7 +98,29 @@ def get_pub_from_priv(priv: bytes) -> bytes:
 # Return a JSON object with "key" and "chain_code" properties as bytes
 # https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki#user-content-Private_parent_key_rarr_private_child_key
 def derive_priv_child(key: bytes, chain_code: bytes, index: int, hardened: bool) -> object:
-    pass
+    if (VERBOSE): print("\n*** derive_priv_child() ***\n")
+
+    parent_bip32_key = BIP32Key.fromEntropy(key)
+    if (hardened):
+        hardened_index = int(0x80000000) + index
+        if (VERBOSE): print("Hardened child index: ", hex(hardened_index))
+        child_bip32_key = parent_bip32_key.ChildKey(hardened_index)
+    else:
+        if (VERBOSE): print("Normal child index: ", hex(index))
+        child_bip32_key = parent_bip32_key.ChildKey(index)
+    
+    child_private_key_hex = child_bip32_key.PrivateKey().hex()
+    child_chain_code = child_bip32_key.chain_code().hex()
+
+    data = {
+        "chain_code": child_chain_code,
+        "key": child_private_key_hex 
+    }
+    json_object = json.dumps(data)
+
+    if (VERBOSE): print(json_object, "\n")
+
+    return json_object
 
 # Given an extended private key and a BIP32 derivation path,
 # compute the first 2000 child private keys.
@@ -194,6 +205,10 @@ if __name__ == "__main__":
     # Test get_pub_from_priv()
     pri = bytes.fromhex(data['key'])
     pub = get_pub_from_priv(pri)
+    chain_code = bytes.fromhex(data['chain_code'])
+
+    derive_priv_child(pri, chain_code, 1, False)
+    derive_priv_child(pri, chain_code, 1, True)
 
     # TODO: Uncomment for submission
     # print(f"{WALLET_NAME} {recover_wallet_state(EXTENDED_PRIVATE_KEY)['balance']}")
