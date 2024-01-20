@@ -1,14 +1,11 @@
 from decimal import Decimal
+from re import I
 from ecdsa import SigningKey, SECP256k1
 from subprocess import run
 from typing import List, Tuple
 import hashlib
 import hmac
 import json
-
-# My extra imports
-import base58
-from bip32utils import BIP32Key
 
 # Given:
 # wpkh(CHANGEME_EXTENDED_PRIVATE_KEY/84h/1h/0h/0/*)#tj8algkg
@@ -17,23 +14,32 @@ from bip32utils import BIP32Key
 VERBOSE = True # TODO: Set to False for submission
 WALLET_NAME = "wallet_201"
 EXTENDED_PRIVATE_KEY = "CHANGEME_EXTENDED_PRIVATE_KEY"
+ORDER_N_OF_G = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 
 # Decode a base58 string into an array of bytes
 def base58_decode(base58_string: str) -> bytes:
     base58_alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-    
+    base58_length = len(base58_alphabet)
+
     # Convert Base58 string to a big integer
+    value = 0
+    for char in base58_string:
+        value = value * base58_length + base58_alphabet.index(char)
+
     # Convert the integer to bytes
-    bytes_with_checksum = base58.b58decode(base58_string)
-    
-    # Chop off the 32 checksum bits and return
-    b = bytes_with_checksum[:-4]
+    bytes_with_checksum = bytearray()
+    while value > 0:
+        value, remainder = divmod(value, 256)
+        bytes_with_checksum.insert(0, remainder)
+
+    # Chop off the 32 checksum bits from the array
+    result = bytes_with_checksum[:-4]
 
     # Get the given checksum
     checksum = bytes_with_checksum[-4:]
     
     # Calculate the checksum of the resulting byte array
-    sha256_hash1 = hashlib.sha256(b).digest()
+    sha256_hash1 = hashlib.sha256(result).digest()
     sha256_hash2 = hashlib.sha256(sha256_hash1).digest()
     sha256_hash2 = sha256_hash2[0:4]
 
@@ -43,14 +49,14 @@ def base58_decode(base58_string: str) -> bytes:
         return None
     
     if (VERBOSE):
-        print("\n*** base58_decode() ***\n")
+        print("\n*** base58_decode_2() ***\n")
         print("--> base58_string:", base58_string, "\n")
-        print("--> byte_array:", b.hex(), "\n")
-        print("--> len: ", len(b), "\n")
+        print("--> byte_array:", result.hex(), "\n")
+        print("--> len: ", len(result), "\n")
         print("--> Checksum verified:", checksum.hex(), "\n")
 
-    # Resulting array should contain 78 bytes according to spec
-    return b
+    # Resulting as bytes, should contain 78 bytes according to spec
+    return bytes(result)
 
 # Deserialize the extended key bytes and return a JSON object
 # https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki#serialization-format
@@ -73,11 +79,11 @@ def deserialize_key(b: bytes) -> object:
         "key": b[46:].hex()
     }
     json_object = json.dumps(data)
-
+    
     if (VERBOSE):
         print("*** deserialize_key() ***\n") 
         print(json_object, "\n")
-
+    
     return json_object
 
 # Derive the secp256k1 compressed public key from a given private key
@@ -100,26 +106,36 @@ def get_pub_from_priv(priv: bytes) -> bytes:
 def derive_priv_child(key: bytes, chain_code: bytes, index: int, hardened: bool) -> object:
     if (VERBOSE): print("\n*** derive_priv_child() ***\n")
 
-    parent_bip32_key = BIP32Key.fromEntropy(key)
+    # Prepare the data depending on the child type
     if (hardened):
-        hardened_index = int(0x80000000) + index
-        if (VERBOSE): print("Hardened child index: ", hex(hardened_index))
-        child_bip32_key = parent_bip32_key.ChildKey(hardened_index)
+        index = int(0x80000000) + index
+        if (VERBOSE): print("Hardened child index: ", hex(index))
+        data = b'\x00' + key + index.to_bytes(4, byteorder='big')
     else:
         if (VERBOSE): print("Normal child index: ", hex(index))
-        child_bip32_key = parent_bip32_key.ChildKey(index)
+        pub = get_pub_from_priv(key)
+        data = pub + index.to_bytes(4, byteorder='big')
+    output_512 = hmac.new(key, data, hashlib.sha512).digest()
     
-    child_private_key_hex = child_bip32_key.PrivateKey().hex()
-    child_chain_code = child_bip32_key.chain_code().hex()
-
+    # Right 256 bits is the chain_code
+    child_chain_code = output_512[32:]
+    
+    # From the left 256 bits, derive the child pri
+    left_256_int = int.from_bytes(output_512[:32], byteorder='big')
+    key_int = int.from_bytes(key, byteorder='big')
+    child_private_key_int = (left_256_int + key_int) % ORDER_N_OF_G
+    child_private_key = hex(child_private_key_int)
+    child_private_key = child_private_key[2:]
+    
+    # Prepare for json
     data = {
-        "chain_code": child_chain_code,
-        "key": child_private_key_hex 
+        "chain_code": child_chain_code.hex(),
+        "key": child_private_key 
     }
     json_object = json.dumps(data)
-
+    
     if (VERBOSE): print(json_object, "\n")
-
+    
     return json_object
 
 # Given an extended private key and a BIP32 derivation path,
@@ -201,7 +217,7 @@ if __name__ == "__main__":
     # Test base58_decode() and deserialize_key() 
     json_object = deserialize_key(base58_decode(EXTENDED_PRIVATE_KEY))
     data = json.loads(json_object)
-    
+
     # Test get_pub_from_priv()
     pri = bytes.fromhex(data['key'])
     pub = get_pub_from_priv(pri)
