@@ -11,7 +11,9 @@ import json
 # wpkh(CHANGEME_EXTENDED_PRIVATE_KEY/84h/1h/0h/0/*)#tj8algkg
 
 # Constants
-VERBOSE = True # TODO: Set to False for submission
+VERBOSE = 1 # TODO: Set to False for submission
+MUTE = False 
+
 WALLET_NAME = "wallet_201"
 EXTENDED_PRIVATE_KEY = "CHANGEME_EXTENDED_PRIVATE_KEY"
 ORDER_N_OF_G = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
@@ -92,6 +94,8 @@ def deserialize_key(b: bytes) -> object:
 def get_pub_from_priv(priv: bytes) -> bytes:
     signing_key = SigningKey.from_string(priv, curve=SECP256k1)
     public_key = signing_key.get_verifying_key()
+
+    # Note: is called `to_string()` the type they return is actually bytes
     compressed_public_key = public_key.to_string("compressed")
 
     if (VERBOSE):
@@ -124,13 +128,12 @@ def derive_priv_child(key: bytes, chain_code: bytes, index: int, hardened: bool)
     left_256_int = int.from_bytes(output_512[:32], byteorder='big')
     key_int = int.from_bytes(key, byteorder='big')
     child_private_key_int = (left_256_int + key_int) % ORDER_N_OF_G
-    child_private_key = hex(child_private_key_int)
-    child_private_key = child_private_key[2:]
-    
+    child_private_key = child_private_key_int.to_bytes(32, byteorder='big')
+
     # Prepare for json
     data = {
         "chain_code": child_chain_code.hex(),
-        "key": child_private_key 
+        "key": child_private_key.hex() 
     }
     json_object = json.dumps(data)
     
@@ -142,8 +145,39 @@ def derive_priv_child(key: bytes, chain_code: bytes, index: int, hardened: bool)
 # compute the first 2000 child private keys.
 # Return an array of keys encoded as bytes.
 # The derivation path is formatted as an array of (index: int, hardened: bool) tuples.
+# Notes: 
+# - My example would be for `84h/1h/0h/0/*` : [(84, True), (1, True), (0, True), (0, False)]
+# - The key in the function argument corresponds to the master (m)
 def get_wallet_privs(key: bytes, chain_code: bytes, path: List[Tuple[int, bool]]) -> List[bytes]:
-    pass
+    if (VERBOSE): print("\n*** get_wallet_privs() ***\n")
+
+    # 1. Move through the path to locate the last parent
+    current_key = key
+    for item in path:
+        child_index, hardened = item
+        child_json = derive_priv_child(current_key, chain_code, child_index, hardened)
+        child_data = json.loads(child_json)
+        current_key = bytes.fromhex(child_data['key'])
+    
+    if (VERBOSE): print(current_key.hex(), "\n")
+
+    # 2. Get the first 2000 children private keys of that last parent
+    children_keys = []
+    hardened = False
+    for child_index in range(0, 2000):
+        child_json = derive_priv_child(current_key, chain_code, child_index, hardened)
+        child_data = json.loads(child_json)
+        child_key = bytes.fromhex(child_data['key'])
+        children_keys.append(child_key)
+
+    if (MUTE): 
+        i = 0
+        for child_key in children_keys:
+            i = i + 1
+            if i > 1950:
+                print(child_key.hex())
+    
+    return children_keys
 
 # Derive the p2wpkh witness program (aka scriptPubKey) for a given compressed 
 # public key.Return a bytes array to be compared with the JSON output of Bitcoin 
@@ -223,8 +257,13 @@ if __name__ == "__main__":
     pub = get_pub_from_priv(pri)
     chain_code = bytes.fromhex(data['chain_code'])
 
+    # Test derive_priv_child()
     derive_priv_child(pri, chain_code, 1, False)
     derive_priv_child(pri, chain_code, 1, True)
+
+    # Test get_wallet_privs
+    path = [(84, True), (1, True), (0, True), (0, False)]
+    get_wallet_privs(pri, chain_code, path)
 
     # TODO: Uncomment for submission
     # print(f"{WALLET_NAME} {recover_wallet_state(EXTENDED_PRIVATE_KEY)['balance']}")
