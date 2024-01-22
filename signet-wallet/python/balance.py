@@ -10,13 +10,26 @@ import json
 # Given:
 # wpkh(CHANGEME_EXTENDED_PRIVATE_KEY/84h/1h/0h/0/*)#tj8algkg
 
+#--------------
 # Constants
+#--------------
+
+# Output control
 VERBOSE = 1 # TODO: Set to False for submission
 MUTE = False 
+KEY_BYTE_LENGTH = 32
 
+# Elliptic curve
+ORDER_N_OF_G = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+
+
+# Signet specific
 WALLET_NAME = "wallet_201"
 EXTENDED_PRIVATE_KEY = "CHANGEME_EXTENDED_PRIVATE_KEY"
-ORDER_N_OF_G = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+
+#--------------
+# Functions
+#--------------
 
 # Decode a base58 string into an array of bytes
 def base58_decode(base58_string: str) -> bytes:
@@ -122,13 +135,13 @@ def derive_priv_child(key: bytes, chain_code: bytes, index: int, hardened: bool)
     output_512 = hmac.new(key, data, hashlib.sha512).digest()
     
     # Right 256 bits is the chain_code
-    child_chain_code = output_512[32:]
+    child_chain_code = output_512[KEY_BYTE_LENGTH:]
     
     # From the left 256 bits, derive the child pri
-    left_256_int = int.from_bytes(output_512[:32], byteorder='big')
+    left_256_int = int.from_bytes(output_512[:KEY_BYTE_LENGTH], byteorder='big')
     key_int = int.from_bytes(key, byteorder='big')
     child_private_key_int = (left_256_int + key_int) % ORDER_N_OF_G
-    child_private_key = child_private_key_int.to_bytes(32, byteorder='big')
+    child_private_key = child_private_key_int.to_bytes(KEY_BYTE_LENGTH, byteorder='big')
 
     # Prepare for json
     data = {
@@ -180,12 +193,20 @@ def get_wallet_privs(key: bytes, chain_code: bytes, path: List[Tuple[int, bool]]
     return children_keys
 
 # Derive the p2wpkh witness program (aka scriptPubKey) for a given compressed 
-# public key.Return a bytes array to be compared with the JSON output of Bitcoin 
+# public key. Return a bytes array to be compared with the JSON output of Bitcoin 
 # Core RPC getblock so we can find our received transactions in blocks.
 # These are segwit version 0 pay-to-public-key-hash witness programs.
 # https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki#user-content-P2WPKH
 def get_p2wpkh_program(pubkey: bytes, version: int=0) -> bytes:
-    pass
+    if (VERBOSE): print("\n*** get_p2wpkh_program() ***\n")
+    v = version.to_bytes(1, byteorder='big')
+    scriptPubKey = hashlib.new('ripemd160', hashlib.sha256(v + pubkey).digest()).digest()
+    
+    if (VERBOSE):
+        print("version: ", v)
+        print("expected scriptPubKey", scriptPubKey)
+    
+    return scriptPubKey
 
 # Assuming Bitcoin Core is running and connected to signet using default 
 # datadir, execute an RPC and return its value or error message.
@@ -247,6 +268,10 @@ def recover_wallet_state(xprv: str):
     # return state
     pass
 
+#--------------
+# Main
+#--------------
+
 if __name__ == "__main__":
     # Test base58_decode() and deserialize_key() 
     json_object = deserialize_key(base58_decode(EXTENDED_PRIVATE_KEY))
@@ -264,6 +289,9 @@ if __name__ == "__main__":
     # Test get_wallet_privs
     path = [(84, True), (1, True), (0, True), (0, False)]
     get_wallet_privs(pri, chain_code, path)
+
+    # Test get_p2wpkh_program()
+    get_p2wpkh_program(pub, 0)
 
     # TODO: Uncomment for submission
     # print(f"{WALLET_NAME} {recover_wallet_state(EXTENDED_PRIVATE_KEY)['balance']}")
