@@ -3,7 +3,7 @@
 #---------
 
 # Administrator installed libraries
-# pip install ecdsa
+pip install ecdsa
 
 python ./python/balance.py
 
