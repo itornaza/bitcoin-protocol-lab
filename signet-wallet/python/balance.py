@@ -371,8 +371,8 @@ def recover_wallet_state(xprv: str):
 
         # Scan every tx in every block
         for tx in txs[1:]: # Ignore the coiinbase transaction
-            raw_tx = bcli(f"getrawtransaction {tx} true")
-            
+            raw_tx = bcli(f"getrawtransaction {tx} true {block_hash}")
+
             # Check every tx input (witness) for our own compressed public 
             # keys. These are coins we have spent.
 
@@ -404,7 +404,6 @@ def recover_wallet_state(xprv: str):
     # Get through the remaining UTXOS to get the current total
     state['balance'] = sum(state['utxo'].values())
     state['balance'] = state['balance'] / SCALE_UP_FACTOR
-    # print(state['balance'])
 
     return state
 
