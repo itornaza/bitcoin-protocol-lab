@@ -16,9 +16,11 @@ import json
 
 # Output control
 VERBOSE = True
+VERBOSE_TESTS = False
 MUTE = False 
 KEY_BYTE_LENGTH = 32
 BYTE_ORDER = 'big'
+SCALE_UP_FACTOR = 100000000
 
 # Elliptic curve
 ORDER_N_OF_G = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
@@ -34,7 +36,7 @@ EXTENDED_PRIVATE_KEY = "CHANGEME_EXTENDED_PRIVATE_KEY"
 
 def ion_assert(calculated, expected, test_name):
     assert calculated == expected, f"calculated and expected should match\ncalculated:\n{calculated}\nexpected:\n{expected}"
-    if (VERBOSE): print(test_name, " ... [ok]")
+    if (VERBOSE_TESTS): print(test_name, " ... [ok]")
     pass
 
 def ion_int_to_bytes(index: int, n_bytes: int) -> bytes:
@@ -110,8 +112,8 @@ def deserialize_key(b: bytes) -> object:
         "depth": b[4:5].hex(),
         "fingerprint": b[5:9].hex(),
         "child": b[9:13].hex(),
-        "chain_code": b[13:46].hex(),
-        "key": b[46:].hex()
+        "chain_code": b[13:45].hex(),
+        "key": b[46:].hex() # Skip the leading 0x00 at the index 45
     }
     json_object = json.dumps(data)
     
@@ -120,6 +122,24 @@ def deserialize_key(b: bytes) -> object:
         print(json_object, "\n")
     
     return json_object
+
+def test_deserialize_key():
+    # Get our own key derived data using (https://bip32jp.github.io/english/)
+    pri = "CHANGEME_EXTENDED_PRIVATE_KEY"
+    expected_key = "0000000000000000000000000000000000000000000000000000000000000001"
+    expected_chain_code = "0000000000000000000000000000000000000000000000000000000000000000"
+
+    # Calculate our own key
+    pri = base58_decode(pri).hex()
+    pri_bytes = bytes.fromhex(pri)
+    json_object = deserialize_key(pri_bytes)
+    data = json.loads(json_object)
+    calculated_key_bytes = bytes.fromhex(data['key'])
+    calculated_key = calculated_key_bytes.hex()
+    calculated_chain_code = data['chain_code']
+    ion_assert(calculated_chain_code, expected_chain_code, "test_deserialize_key-chain_code")
+    ion_assert(calculated_key, expected_key, "test_deserialize_key-key")
+    
 
 # Derive the secp256k1 compressed public key from a given private key
 # BONUS POINTS: Implement ECDSA yourself and multiply you key by the generator
@@ -262,13 +282,14 @@ def test_get_wallet_privs():
 # These are segwit version 0 pay-to-public-key-hash witness programs.
 # https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki#user-content-P2WPKH
 def get_p2wpkh_program(pubkey: bytes, version: int=0) -> bytes:
-    v = version.to_bytes(1, byteorder=BYTE_ORDER)
-    scriptPubKey = hashlib.new('ripemd160', hashlib.sha256(v + pubkey).digest()).digest()
-    
+    OP_0 = version.to_bytes(1, byteorder=BYTE_ORDER)
+    OP_PUSHBYTES_20 = b'\x14'
+    witness_program = hashlib.new('ripemd160', hashlib.sha256(pubkey).digest()).digest()
+    scriptPubKey = OP_0 + OP_PUSHBYTES_20 + witness_program
+
     if (MUTE):
         print("\n*** get_p2wpkh_program() ***\n")
-        print("version: ", v)
-        print("expected scriptPubKey: ", scriptPubKey)
+        print("expected scriptPubKey: ", scriptPubKey.hex())
     
     return scriptPubKey
 
@@ -276,7 +297,7 @@ def test_p2wpkh_program():
     # Test first test case master pub key (https://en.bitcoin.it/wiki/BIP_0032_TestVectors)
     # Manualy construct the script using (https://privatekeys.pw/calc)
     pub = "0339a36013301597daef41fbe593a02cc513d0b55527ec2df1050e2e8ff49c85c2"
-    expected = "8d0182320d1bc0c7da470bd95117d7c2ec76d239"
+    expected = "00143442193e1bb70916e914552172cd4e2dbc9df811"
     calculated = get_p2wpkh_program(bytes.fromhex(pub), 0)
     ion_assert(calculated.hex(), expected, "test_p2wpkh_program")
 
@@ -301,76 +322,107 @@ def bcli(cmd: str):
 # - Request blocks 0-310 from Bitcoin Core via RPC and scan all transactions
 # - Return a state object with all the derived keys and total wallet balance
 def recover_wallet_state(xprv: str):
+    height = 310
+
+    #---------------------------------------------------------------
     # Generate all the keypairs and witness programs to search for
-    # privs = 
-    # pubs = 
-    # programs = 
+    #---------------------------------------------------------------
+
+    # Extract the pri and chain_code from the given extended private key
+    key_json = deserialize_key(base58_decode(EXTENDED_PRIVATE_KEY))
+    key_data = json.loads(key_json)
+    pri = bytes.fromhex(key_data['key'])
+    chain_code = bytes.fromhex(key_data['chain_code'])
+
+    # My wallet path is m/84'/1'/0'/0/*
+    path = [(84, True), (1, True), (0, True), (0, False)] 
+    privs = get_wallet_privs(pri, chain_code, path)
+
+    # For every private key get the coresponding public key and witness program
+    pubs = []
+    programs = []
+    for child_priv in privs:
+        child_pub = get_pub_from_priv(child_priv)
+        pubs.append(child_pub)
+        programs.append(get_p2wpkh_program(child_pub, 0))
 
     # Prepare a wallet state data structure
-    # state = {
-    #     "utxo": {},
-    #     "balance": 0,
-    #     "privs": privs,
-    #     "pubs": pubs,
-    #     "programs": programs
-    # }
+    state = {
+        "utxo": {},
+        "balance": 0,
+        "privs": privs, 
+        "pubs": pubs, # Manually checked, are ok
+        "programs": programs
+    }
 
+    #---------------------------------------------------------------
     # Scan blocks 0-310
-    # height = 310
-    # for h in range(height + 1):
+    #---------------------------------------------------------------
 
-    #     # Scan every tx in every block
-    #     for tx in txs:
-    #         # Check every tx input (witness) for our own compressed public 
-    #         # keys. These are coins we have spent.
-    #
-    #         for inp in tx["vin"]:
+    for h in range(height + 1):
 
-    #                 # Remove this coin from our wallet state utxo pool
-    #                 # so we don't double spend it later
+        # Get all the transactions of the current block
+        block_hash = bcli(f"getblockhash {h}")
+        block = bcli(f"getblock {block_hash}")
+        
+        # Parse the block with json to extract all the transactions
+        block_data = json.loads(block)
+        txs = block_data["tx"]
 
-    #         # Check every tx output for our own witness programs.
-    #         # These are coins we have received.
-    #         for out in tx["vout"]:
-    #                 # Add to our total balance
+        # Scan every tx in every block
+        for tx in txs[1:]: # Ignore the coiinbase transaction
+            raw_tx = bcli(f"getrawtransaction {tx} true")
+            
+            # Check every tx input (witness) for our own compressed public 
+            # keys. These are coins we have spent.
 
-    #                 # Keep track of this UTXO by its outpoint in case we 
-    #                 # spend it later
+            # Use json to get the vin from the raw transaction
+            raw_tx_data = json.loads(raw_tx)
+            txid = raw_tx_data['txid']
 
-    # return state
-    pass
+            for txinwitness in raw_tx_data['vin']:
+                witnesses = txinwitness['txinwitness'][1]
+                for pub in state['pubs']:
+                    if pub.hex() in witnesses:
+                        # Remove this coin from our wallet state utxo pool
+                        # so we don't double spend it later
+                        if txid in state['utxo']:
+                            del state['utxo'][txid]
+
+            # Check every tx output for our own witness programs.
+            # These are coins we have received.
+            for out in raw_tx_data['vout']:
+                scriptPubKey = out['scriptPubKey']['hex']
+                for program in state['programs']:
+                    if program.hex() in scriptPubKey:
+                        # Add to our total balance
+                        # No need now, I will do that after having cleared the utxos
+                        # Keep track of this UTXO by its outpoint in case we 
+                        # spend it later
+                        state['utxo'][txid] = out['value'] * SCALE_UP_FACTOR
+    
+    # Get through the remaining UTXOS to get the current total
+    state['balance'] = sum(state['utxo'].values())
+    state['balance'] = state['balance'] / SCALE_UP_FACTOR
+    # print(state['balance'])
+
+    return state
+
+def test_suite():
+    if (VERBOSE_TESTS): print("\nRunning test suite ...")
+    test_base58_decode()
+    test_deserialize_key()
+    test_get_pub_from_priv()
+    test_derive_priv_child()
+    test_get_wallet_privs()
+    test_p2wpkh_program()
+    if (VERBOSE_TESTS): print("Test suite [ok]\n")
 
 #--------------
 # Main
 #--------------
 
 if __name__ == "__main__":
-    # Test base58_decode() and deserialize_key() 
-    # json_object = deserialize_key(base58_decode(EXTENDED_PRIVATE_KEY))
-    # data = json.loads(json_object)
+    recover_wallet_state(EXTENDED_PRIVATE_KEY)
 
-    # # Test get_pub_from_priv()
-    # pri = bytes.fromhex(data['key'])
-    # pub = get_pub_from_priv(pri)
-    
-    # # Test derive_priv_child()
-    # chain_code = bytes.fromhex(data['chain_code'])
-    # derive_priv_child(pri, chain_code, 1, False)
-    # derive_priv_child(pri, chain_code, 1, True)
-
-    # # Test get_wallet_privs
-    # path = [(84, True), (1, True), (0, True), (0, False)]
-    # get_wallet_privs(pri, chain_code, path)
-
-    # # Test get_p2wpkh_program()
-    # get_p2wpkh_program(pub, 0)
-
-    # Run the tests
-    test_base58_decode()
-    test_get_pub_from_priv()
-    test_derive_priv_child()
-    test_get_wallet_privs()
-    test_p2wpkh_program()
-
-    # TODO: Uncomment for submission
-    # print(f"{WALLET_NAME} {recover_wallet_state(EXTENDED_PRIVATE_KEY)['balance']}")
+    print(f"{WALLET_NAME} {recover_wallet_state(EXTENDED_PRIVATE_KEY)['balance']}")
