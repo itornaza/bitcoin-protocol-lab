@@ -18,9 +18,11 @@ import json
 VERBOSE = True
 VERBOSE_TESTS = False
 MUTE = False 
+TXINDEX = True
+
 KEY_BYTE_LENGTH = 32
 BYTE_ORDER = 'big'
-SCALE_UP_FACTOR = 100000000
+BTC2SAT = 100000000
 
 # Elliptic curve
 ORDER_N_OF_G = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
@@ -37,7 +39,6 @@ EXTENDED_PRIVATE_KEY = "CHANGEME_EXTENDED_PRIVATE_KEY"
 def ion_assert(calculated, expected, test_name):
     assert calculated == expected, f"calculated and expected should match\ncalculated:\n{calculated}\nexpected:\n{expected}"
     if (VERBOSE_TESTS): print(test_name, " ... [ok]")
-    pass
 
 def ion_int_to_bytes(index: int, n_bytes: int) -> bytes:
     index_bytes = index.to_bytes(n_bytes, byteorder=BYTE_ORDER)
@@ -76,8 +77,7 @@ def base58_decode(base58_string: str) -> bytes:
 
     # BONUS POINTS: Verify the checksum!
     if sha256_hash2 != checksum:
-        if (MUTE): print("\n->Failed: Checksums do not match!\n")
-        return None
+        raise Exception("\n->Failed: Checksums do not match!\n")
     
     if (MUTE):
         print("\n*** base58_decode_2() ***\n")
@@ -363,7 +363,7 @@ def recover_wallet_state(xprv: str):
 
         # Get all the transactions of the current block
         block_hash = bcli(f"getblockhash {h}")
-        block = bcli(f"getblock {block_hash}")
+        block = bcli(f"getblock {block_hash} 2")
         
         # Parse the block with json to extract all the transactions
         block_data = json.loads(block)
@@ -371,39 +371,49 @@ def recover_wallet_state(xprv: str):
 
         # Scan every tx in every block
         for tx in txs[1:]: # Ignore the coiinbase transaction
-            raw_tx = bcli(f"getrawtransaction {tx} true {block_hash}")
-
-            # Check every tx input (witness) for our own compressed public 
-            # keys. These are coins we have spent.
+            if (TXINDEX):
+                raw_tx = bcli(f"getrawtransaction {tx} true")
+            else:
+                raw_tx = bcli(f"getrawtransaction {tx} true {block_hash}")
 
             # Use json to get the vin from the raw transaction
             raw_tx_data = json.loads(raw_tx)
             txid = raw_tx_data['txid']
 
-            for txinwitness in raw_tx_data['vin']:
-                witnesses = txinwitness['txinwitness'][1]
-                for pub in state['pubs']:
-                    if pub.hex() in witnesses:
-                        # Remove this coin from our wallet state utxo pool
-                        # so we don't double spend it later
-                        if txid in state['utxo']:
-                            del state['utxo'][txid]
-
             # Check every tx output for our own witness programs.
             # These are coins we have received.
             for out in raw_tx_data['vout']:
-                scriptPubKey = out['scriptPubKey']['hex']
+                scriptPubKeys = out['scriptPubKey']['hex']
                 for program in state['programs']:
-                    if program.hex() in scriptPubKey:
+                    if program.hex() in scriptPubKeys:
                         # Add to our total balance
-                        # No need now, I will do that after having cleared the utxos
                         # Keep track of this UTXO by its outpoint in case we 
                         # spend it later
-                        state['utxo'][txid] = out['value'] * SCALE_UP_FACTOR
-    
+                        state['utxo'][txid] = out['value'] * BTC2SAT
+                        # print("added: ", txid)
+
+            # Check every tx input (witness) for our own compressed public 
+            # keys. These are coins we have spent.
+            for vin in raw_tx_data['vin']:
+
+                # use json.loads(field_name) to get an array
+
+                outpoint = vin['txid'] # TODO how many outpoints for each vin???
+                for txinwitness in raw_tx_data['vin']:
+                    witnesses = txinwitness['txinwitness'][1]
+                    for pub in state['pubs']:
+                        if pub.hex() in witnesses:
+                            # print("found a matching: ", pub.hex())
+
+                            # Remove this coin from our wallet state utxo pool
+                            # so we don't double spend it later
+                            if outpoint in state['utxo']:
+                                del state['utxo'][outpoint]
+                                # print("removed: ", outpoint)
+
     # Get through the remaining UTXOS to get the current total
     state['balance'] = sum(state['utxo'].values())
-    state['balance'] = state['balance'] / SCALE_UP_FACTOR
+    state['balance'] = state['balance'] / BTC2SAT
 
     return state
 
@@ -423,5 +433,4 @@ def test_suite():
 
 if __name__ == "__main__":
     recover_wallet_state(EXTENDED_PRIVATE_KEY)
-
     print(f"{WALLET_NAME} {recover_wallet_state(EXTENDED_PRIVATE_KEY)['balance']}")
