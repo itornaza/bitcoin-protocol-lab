@@ -280,7 +280,6 @@ def bcli(cmd: str):
 # - Request blocks 0-310 from Bitcoin Core via RPC and scan all transactions
 # - Return a state object with all the derived keys and total wallet balance
 def recover_wallet_state(xprv: str):
-
     #---------------------------------------------------------------
     # Generate all the keypairs and witness programs to search for
     #---------------------------------------------------------------
@@ -317,7 +316,7 @@ def recover_wallet_state(xprv: str):
     #---------------------------------------------------------------
     
     height = 310
-    for h in range(height + 1):
+    for h in range(0, height + 1):
         print("Scanning block:", h)
 
         # Get all the transactions of the current block
@@ -348,15 +347,14 @@ def recover_wallet_state(xprv: str):
             # Check every tx input (witness) for our own compressed public 
             # keys. These are coins we have spent.
             for vin in tx['vin']:
-                outpoint = vin['txid'] # Not sure we get them all, loop?
-                for txinwitness in tx['vin']:
-                    witnesses = txinwitness['txinwitness'][1]
-                    for pub in state['pubs']:
-                        if pub.hex() in witnesses:
-                            # Remove this coin from our wallet state utxo pool
-                            # so we don't double spend it later
-                            if outpoint in state['utxo']:
-                                del state['utxo'][outpoint]
+                outpoint = vin['txid']
+                witness = vin['txinwitness'][1]
+                for pub in state['pubs']:
+                    if pub.hex() == witness:
+                        # Remove this coin from our wallet state utxo pool
+                        # so we don't double spend it later
+                        if outpoint in state['utxo']:
+                            del state['utxo'][outpoint]
 
     #-----------------------------
     # Analyze the remaining UTXOS
@@ -382,5 +380,7 @@ def test_suite():
 #--------------
 
 if __name__ == "__main__":
-    recover_wallet_state(EXTENDED_PRIVATE_KEY)
     print(f"{WALLET_NAME} {recover_wallet_state(EXTENDED_PRIVATE_KEY)['balance']}")
+
+    # wallet_201 9.41237769
+    # wallet_201 9.41237769
