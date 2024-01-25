@@ -14,23 +14,12 @@ import json
 # Constants
 #--------------
 
-# Output control
-VERBOSE = True
-VERBOSE_TESTS = False
-MUTE = False 
-TXINDEX = True
-
+WALLET_NAME = "wallet_201"
+EXTENDED_PRIVATE_KEY = "CHANGEME_EXTENDED_PRIVATE_KEY"
 KEY_BYTE_LENGTH = 32
 BYTE_ORDER = 'big'
 BTC2SAT = 100000000
-
-# Elliptic curve
 ORDER_N_OF_G = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
-
-
-# Signet specific
-WALLET_NAME = "wallet_201"
-EXTENDED_PRIVATE_KEY = "CHANGEME_EXTENDED_PRIVATE_KEY"
 
 #--------------
 # Utilities
@@ -38,7 +27,7 @@ EXTENDED_PRIVATE_KEY = "CHANGEME_EXTENDED_PRIVATE_KEY"
 
 def ion_assert(calculated, expected, test_name):
     assert calculated == expected, f"calculated and expected should match\ncalculated:\n{calculated}\nexpected:\n{expected}"
-    if (VERBOSE_TESTS): print(test_name, " ... [ok]")
+    print(test_name, " ... [ok]")
 
 def ion_int_to_bytes(index: int, n_bytes: int) -> bytes:
     index_bytes = index.to_bytes(n_bytes, byteorder=BYTE_ORDER)
@@ -78,13 +67,6 @@ def base58_decode(base58_string: str) -> bytes:
     # BONUS POINTS: Verify the checksum!
     if sha256_hash2 != checksum:
         raise Exception("\n->Failed: Checksums do not match!\n")
-    
-    if (MUTE):
-        print("\n*** base58_decode_2() ***\n")
-        print("--> base58_string:", base58_string, "\n")
-        print("--> byte_array:", result.hex(), "\n")
-        print("--> len: ", len(result), "\n")
-        print("--> Checksum verified:", checksum.hex(), "\n")
 
     # Resulting as bytes, should contain 78 bytes according to spec
     return bytes(result)
@@ -116,11 +98,6 @@ def deserialize_key(b: bytes) -> object:
         "key": b[46:].hex() # Skip the leading 0x00 at the index 45
     }
     json_object = json.dumps(data)
-    
-    if (MUTE):
-        print("*** deserialize_key() ***\n") 
-        print(json_object, "\n")
-    
     return json_object
 
 def test_deserialize_key():
@@ -147,14 +124,7 @@ def test_deserialize_key():
 def get_pub_from_priv(priv: bytes) -> bytes:
     signing_key = SigningKey.from_string(priv, curve=SECP256k1)
     public_key = signing_key.get_verifying_key()
-
-    # Note: is called `to_string()` the type they return is actually bytes
-    compressed_public_key = public_key.to_string("compressed")
-
-    if (MUTE):
-        print("\n*** get_pub_from_priv() ***")
-        print("\nCompressed public key: ", compressed_public_key.hex(), "\n")
-
+    compressed_public_key = public_key.to_string("compressed") # return bytes
     return compressed_public_key
 
 def test_get_pub_from_priv():
@@ -196,13 +166,6 @@ def derive_priv_child(key: bytes, chain_code: bytes, index: int, hardened: bool)
         "key": child_private_key.hex() 
     }
     json_object = json.dumps(data)
-    
-    if (MUTE): 
-        print("\n*** derive_priv_child() ***\n")
-        print("Hardened") if hardened else print("Normal")
-        print("Child index: ", hex(index))
-        print(json_object, "\n")
-
     return json_object
 
 def test_derive_priv_child():
@@ -286,11 +249,6 @@ def get_p2wpkh_program(pubkey: bytes, version: int=0) -> bytes:
     OP_PUSHBYTES_20 = b'\x14'
     witness_program = hashlib.new('ripemd160', hashlib.sha256(pubkey).digest()).digest()
     scriptPubKey = OP_0 + OP_PUSHBYTES_20 + witness_program
-
-    if (MUTE):
-        print("\n*** get_p2wpkh_program() ***\n")
-        print("expected scriptPubKey: ", scriptPubKey.hex())
-    
     return scriptPubKey
 
 def test_p2wpkh_program():
@@ -322,7 +280,6 @@ def bcli(cmd: str):
 # - Request blocks 0-310 from Bitcoin Core via RPC and scan all transactions
 # - Return a state object with all the derived keys and total wallet balance
 def recover_wallet_state(xprv: str):
-    height = 310
 
     #---------------------------------------------------------------
     # Generate all the keypairs and witness programs to search for
@@ -358,8 +315,10 @@ def recover_wallet_state(xprv: str):
     #---------------------------------------------------------------
     # Scan blocks 0-310
     #---------------------------------------------------------------
-
+    
+    height = 310
     for h in range(height + 1):
+        print("Scanning block:", h)
 
         # Get all the transactions of the current block
         block_hash = bcli(f"getblockhash {h}")
@@ -367,65 +326,56 @@ def recover_wallet_state(xprv: str):
         
         # Parse the block with json to extract all the transactions
         block_data = json.loads(block)
-        txs = block_data["tx"]
+        tx_header = block_data["tx"]
 
         # Scan every tx in every block
-        for tx in txs[1:]: # Ignore the coiinbase transaction
-            if (TXINDEX):
-                raw_tx = bcli(f"getrawtransaction {tx} true")
-            else:
-                raw_tx = bcli(f"getrawtransaction {tx} true {block_hash}")
+        for tx in tx_header[1:]: # Ignore the coinbase transactions in each block
 
-            # Use json to get the vin from the raw transaction
-            raw_tx_data = json.loads(raw_tx)
-            txid = raw_tx_data['txid']
+            # Get the txid in the block except the coinbase
+            txid = tx['txid']
 
             # Check every tx output for our own witness programs.
             # These are coins we have received.
-            for out in raw_tx_data['vout']:
-                scriptPubKeys = out['scriptPubKey']['hex']
+            for vout in tx['vout']:
+                scriptPubKeys = vout['scriptPubKey']['hex']
                 for program in state['programs']:
                     if program.hex() in scriptPubKeys:
                         # Add to our total balance
                         # Keep track of this UTXO by its outpoint in case we 
                         # spend it later
-                        state['utxo'][txid] = out['value'] * BTC2SAT
-                        # print("added: ", txid)
+                        state['utxo'][txid] = vout['value'] * BTC2SAT
 
             # Check every tx input (witness) for our own compressed public 
             # keys. These are coins we have spent.
-            for vin in raw_tx_data['vin']:
-
-                # use json.loads(field_name) to get an array
-
-                outpoint = vin['txid'] # TODO how many outpoints for each vin???
-                for txinwitness in raw_tx_data['vin']:
+            for vin in tx['vin']:
+                outpoint = vin['txid'] # Not sure we get them all, loop?
+                for txinwitness in tx['vin']:
                     witnesses = txinwitness['txinwitness'][1]
                     for pub in state['pubs']:
                         if pub.hex() in witnesses:
-                            # print("found a matching: ", pub.hex())
-
                             # Remove this coin from our wallet state utxo pool
                             # so we don't double spend it later
                             if outpoint in state['utxo']:
                                 del state['utxo'][outpoint]
-                                # print("removed: ", outpoint)
 
-    # Get through the remaining UTXOS to get the current total
+    #-----------------------------
+    # Analyze the remaining UTXOS
+    #-----------------------------
+    
     state['balance'] = sum(state['utxo'].values())
     state['balance'] = state['balance'] / BTC2SAT
 
     return state
 
 def test_suite():
-    if (VERBOSE_TESTS): print("\nRunning test suite ...")
+    print("\nRunning test suite ...")
     test_base58_decode()
     test_deserialize_key()
     test_get_pub_from_priv()
     test_derive_priv_child()
     test_get_wallet_privs()
     test_p2wpkh_program()
-    if (VERBOSE_TESTS): print("Test suite [ok]\n")
+    print("Test suite [ok]\n")
 
 #--------------
 # Main
