@@ -7,8 +7,8 @@ import hashlib
 import hmac
 import json
 
-# Given:
-# wpkh(CHANGEME_EXTENDED_PRIVATE_KEY/84h/1h/0h/0/*)#tj8algkg
+
+
 
 #--------------
 # Constants
@@ -27,7 +27,7 @@ ORDER_N_OF_G = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD036414
 
 def ion_assert(calculated, expected, test_name):
     assert calculated == expected, f"calculated and expected should match\ncalculated:\n{calculated}\nexpected:\n{expected}"
-    print(test_name, " ... [ok]")
+    print(test_name, " - [ok]")
 
 def ion_int_to_bytes(index: int, n_bytes: int) -> bytes:
     index_bytes = index.to_bytes(n_bytes, byteorder=BYTE_ORDER)
@@ -139,6 +139,7 @@ def test_get_pub_from_priv():
 # https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki#user-content-Private_parent_key_rarr_private_child_key
 def derive_priv_child(key: bytes, chain_code: bytes, index: int, hardened: bool) -> object:
 
+    # Set up the index
     index = (int(0x80000000) + index) if hardened else index
     index_bytes = ion_int_to_bytes(index, 4)
 
@@ -148,13 +149,12 @@ def derive_priv_child(key: bytes, chain_code: bytes, index: int, hardened: bool)
     else:
         pub = get_pub_from_priv(key)
         data = pub + index_bytes
-    
     output_512 = hmac.new(chain_code, data, hashlib.sha512).digest()
     
     # Right 256 bits is the chain_code
     child_chain_code = output_512[KEY_BYTE_LENGTH:]
     
-    # From the left 256 bits, derive the child pri
+    # Left 256 bits, derive the child pri
     left_256_int = int.from_bytes(output_512[:KEY_BYTE_LENGTH], byteorder=BYTE_ORDER)
     key_int = int.from_bytes(key, byteorder=BYTE_ORDER)
     child_private_key_int = (left_256_int + key_int) % ORDER_N_OF_G
@@ -317,49 +317,37 @@ def recover_wallet_state(xprv: str):
     
     height = 310
     for h in range(0, height + 1):
-        print("Scanning block:", h)
-
-        # Get all the transactions of the current block
+        
+        # Block ops
         block_hash = bcli(f"getblockhash {h}")
         block = bcli(f"getblock {block_hash} 2")
-        
-        # Parse the block with json to extract all the transactions
         block_data = json.loads(block)
         tx_header = block_data["tx"]
 
-        # Scan every tx in every block
+        # Transactions ops
         for tx in tx_header[1:]: # Ignore the coinbase transactions in each block
-
-            # Get the txid in the block except the coinbase
             txid = tx['txid']
 
-            # Check every tx output for our own witness programs.
-            # These are coins we have received.
+            # Money flowing in
             for vout in tx['vout']:
                 scriptPubKeys = vout['scriptPubKey']['hex']
                 for program in state['programs']:
                     if program.hex() in scriptPubKeys:
-                        # Add to our total balance
-                        # Keep track of this UTXO by its outpoint in case we 
-                        # spend it later
                         state['utxo'][txid] = vout['value'] * BTC2SAT
 
-            # Check every tx input (witness) for our own compressed public 
-            # keys. These are coins we have spent.
+            # Money given out
             for vin in tx['vin']:
                 outpoint = vin['txid']
                 witness = vin['txinwitness'][1]
                 for pub in state['pubs']:
                     if pub.hex() == witness:
-                        # Remove this coin from our wallet state utxo pool
-                        # so we don't double spend it later
                         if outpoint in state['utxo']:
                             del state['utxo'][outpoint]
 
     #-----------------------------
     # Analyze the remaining UTXOS
     #-----------------------------
-    
+
     state['balance'] = sum(state['utxo'].values())
     state['balance'] = state['balance'] / BTC2SAT
 
@@ -380,7 +368,5 @@ def test_suite():
 #--------------
 
 if __name__ == "__main__":
+    # test_suite()
     print(f"{WALLET_NAME} {recover_wallet_state(EXTENDED_PRIVATE_KEY)['balance']}")
-
-    # wallet_201 9.41237769
-    # wallet_201 9.41237769
