@@ -18,6 +18,8 @@ BIG_ENDIAN = 'big'
 LITTLE_ENDIAN = 'little'
 OP_0 = b'\x00'
 OP_PUSHBYTES_20 = b'\x20'
+SEQUENCE = b'\xff\xff\xff\xff'
+SIGHASH_ALL = b'\x01\x00\x00\x00'
 
 #------------
 # Functions
@@ -40,13 +42,6 @@ def test_create_multisig_script():
     pub_1 = bytes.fromhex("02810bf1d5666343229f43d00de990de8053cf4f111dd0d98993c64980acd067fe")
     List = [pub_0, pub_1]
     calculated = create_multisig_script(List)
-    """ result from the bitcoin-cli with the same arguments is:
-    {
-        "address": "2NFis2KjS8FZ57g9SYUZ9sDjsacE48kFjGm",
-        "redeemScript": "52210235e46cac834362fe6f6a6bed1b1424932f0bcd6f5bdec5b4422730749aca0c7b2102810bf1d5666343229f43d00de990de8053cf4f111dd0d98993c64980acd067fe52ae",
-        "descriptor": "sh(multi(2,0235e46cac834362fe6f6a6bed1b1424932f0bcd6f5bdec5b4422730749aca0c7b,02810bf1d5666343229f43d00de990de8053cf4f111dd0d98993c64980acd067fe))#uqzujsac"
-    }
-    """
     expected = bytes.fromhex("52210235e46cac834362fe6f6a6bed1b1424932f0bcd6f5bdec5b4422730749aca0c7b2102810bf1d5666343229f43d00de990de8053cf4f111dd0d98993c64980acd067fe52ae")
     ion_assert(calculated, expected, "test_create_multisig_script")
 
@@ -86,7 +81,7 @@ def output_from_options(script: bytes, value: int) -> bytes:
     length = len(script).to_bytes(1, LITTLE_ENDIAN) # TODO dynamically aadjust size???
     return count + amount_bytes + length + script
 
-def test_input_from_utxo():
+def test_output_from_options():
     script = bytes.fromhex("cd67")
     value = 1234
     calculated = output_from_options(script, value)
@@ -97,7 +92,10 @@ def test_input_from_utxo():
 # <script length> OP_DUP OP_HASH160 <pubkey hash> OP_EQUALVERIFY OP_CHECKSIG
 # https://github.com/bitcoin/bips/blob/master/bip-0143.mediawiki#specification
 def get_p2wpkh_scriptcode(utxo: object) -> bytes:
-    pass
+    data = json.loads(utxo)
+    script_pub_key = bytes.fromhex(data['scriptPubKey'])
+    pub_key_hash = script_pub_key[2:]
+    return b'\x19\x76\xa9\x14' + pub_key_hash + b'\x88\xac'
 
 # Compute the commitment hash for a single input and return bytes to sign.
 # This implements the BIP 143 transaction digest algorithm
@@ -107,27 +105,50 @@ def get_p2wpkh_scriptcode(utxo: object) -> bytes:
 def get_commitment_hash(outpoint: bytes, scriptcode: bytes, value: int, outputs: List[bytes]) -> bytes:
     def dsha256(data: bytes) -> bytes:
         return hashlib.new("sha256", hashlib.new("sha256", data).digest()).digest()
+
     # Version
+    version = (2).to_bytes(4, LITTLE_ENDIAN)
+    sequence = version
 
     # All TX input outpoints (only one in our case)
+    sequence = sequence + dsha256(outpoint)
 
     # All TX input sequences (only one for us, always default value)
+    sequence = sequence + dsha256(SEQUENCE)
 
     # Single outpoint being spent
+    sequence = sequence + outpoint + (0).to_bytes(4, LITTLE_ENDIAN)
 
     # Scriptcode (the scriptPubKey in/implied by the output being spent, see BIP 143)
+    sequence = sequence + scriptcode
 
     # Value of output being spent
+    sequence = sequence + (value).to_bytes(8, LITTLE_ENDIAN)
 
     # Sequence of output being spent (always default for us)
+    sequence = sequence + SEQUENCE
 
     # All TX outputs
+    sequence = sequence + dsha256(outputs[0] + outputs[1])
 
     # Locktime (always default for us)
+    sequence = sequence + (0).to_bytes(4, LITTLE_ENDIAN)
 
     # SIGHASH_ALL (always default for us)
-    pass
+    sequence = sequence + SIGHASH_ALL
 
+    return dsha256(sequence)
+
+def test_get_commitment_hash():
+    outpoint = bytes.fromhex("db6b1b20aa0fd7b23880be2ecbd4a98130974cf4748fb66092ac4d3ceb1a5477")
+    outputs = [bytes.fromhex("b8b4eb0b000000001976a914a457b684d7f0d539a46a45bbc043f35b59d0d96388ac"),
+                bytes.fromhex("0008af2f000000001976a914fd270b1ee6abcaea97fea7ad0402e8bd8ad6d77c88ac")]
+    scriptcode = bytes.fromhex("1976a91479091972186c449eb1ded22b78e40d009bdf008988ac")
+    value = int("00ca9a3b00000000", 16)
+    calculated = get_commitment_hash(outpoint, scriptcode, value, outputs)
+    expected = bytes.fromhex("64f3b0f4dd2bb3aa1ce8566d220cc74dda9df97d8490cc81d89d735c92e59fb6")
+    ion_assert(calculated.hex(), expected.hex(), "test_get_commitment_hash")
+    
 # Given a JSON utxo object and a list of all of our wallet's witness programs,
 # return the index of the derived key that can spend the coin.
 # This index should match the corresponding private key in our wallet's list.
@@ -171,14 +192,12 @@ def assemble_transaction(inputs: List[bytes], outputs: List[bytes], witnesses: L
     flags = bytes.fromhex("0001")
     locktime = bytes.fromhex("00000000")
 
-
 # Given arrays of inputs and outputs (no witnesses!) compute the txid.
 # Return the 32 byte txid as a *reversed* hex-encoded string.
 # https://developer.bitcoin.org/reference/transactions.html#raw-transaction-format
 def get_txid(inputs: List[bytes], outputs: List[bytes]) -> str:
     version = (2).to_bytes(4, "little")
     locktime = bytes.fromhex("00000000")
-
 
 # Spend a p2wpkh utxo to a 2 of 2 multisig p2wsh and return the txid
 def spend_p2wpkh(state: object) -> str:
@@ -237,6 +256,8 @@ def test_suite():
     test_create_multisig_script()
     test_get_p2wsh_program()
     test_input_from_utxo()
+    test_output_from_options()
+    test_get_commitment_hash()
     print("Test suite [ok]\n")
 
 if __name__ == "__main__":
