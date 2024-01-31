@@ -16,8 +16,11 @@ from balance import (
 
 BIG_ENDIAN = 'big'
 LITTLE_ENDIAN = 'little'
+
 OP_0 = b'\x00'
 OP_PUSHBYTES_20 = b'\x20'
+
+VERSION = b'\x01\x00\x00\x00' 
 SEQUENCE = b'\xff\xff\xff\xff'
 SIGHASH_ALL = b'\x01\x00\x00\x00'
 
@@ -107,8 +110,7 @@ def get_commitment_hash(outpoint: bytes, scriptcode: bytes, value: int, outputs:
         return hashlib.new("sha256", hashlib.new("sha256", data).digest()).digest()
 
     # Version
-    version = (2).to_bytes(4, LITTLE_ENDIAN)
-    sequence = version
+    sequence = VERSION
 
     # All TX input outpoints (only one in our case)
     sequence = sequence + dsha256(outpoint)
@@ -117,7 +119,7 @@ def get_commitment_hash(outpoint: bytes, scriptcode: bytes, value: int, outputs:
     sequence = sequence + dsha256(SEQUENCE)
 
     # Single outpoint being spent
-    sequence = sequence + outpoint + (0).to_bytes(4, LITTLE_ENDIAN)
+    sequence = sequence + outpoint
 
     # Scriptcode (the scriptPubKey in/implied by the output being spent, see BIP 143)
     sequence = sequence + scriptcode
@@ -140,13 +142,35 @@ def get_commitment_hash(outpoint: bytes, scriptcode: bytes, value: int, outputs:
     return dsha256(sequence)
 
 def test_get_commitment_hash():
-    outpoint = bytes.fromhex("db6b1b20aa0fd7b23880be2ecbd4a98130974cf4748fb66092ac4d3ceb1a5477")
+    '''
+    Manual computation
+
+	nVersion:     01000000
+    hashPrevouts: 6d478c2c1c0fed58185dc352abd766b7c53ec5c8ecd340c88de70ddabb6dfe1
+    hashSequence: 3bb13029ce7b1f559ef5e747fcac439f1455a2ec7c5f09b72290795e70665044
+    outpoint:     ef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a01000000
+    scriptCode:   1976a9141d0f172a0ecb48aee1be1f2687d2963ae33f71a188ac
+    amount:       0046c32300000000
+    nSequence:    ffffffff
+    hashOutputs:  de984f44532e2173ca0d64314fcefe6d30da6f8cf27bafa706da61df8a226c83
+    nLockTime:    00000000
+    nHashType:    01000000
+
+    Pre-image 
+    0100000006d478c2c1c0fed58185dc352abd766b7c53ec5c8ecd340c88de70ddabb6dfe13bb13029ce7b1f559ef5e747fcac439f1455a2ec7c5f09b72290795e70665044ef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a010000001976a9141d0f172a0ecb48aee1be1f2687d2963ae33f71a188ac0046c32300000000ffffffffde984f44532e2173ca0d64314fcefe6d30da6f8cf27bafa706da61df8a226c830000000001000000
+
+    sigHash
+    7b30936e6e132fdbc0e50cbb25f87b3fe9118f50468fa8017ed3cc7e9339cd62
+    '''
+    outpoint = bytes.fromhex("ef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a01000000")
     outputs = [bytes.fromhex("b8b4eb0b000000001976a914a457b684d7f0d539a46a45bbc043f35b59d0d96388ac"),
                 bytes.fromhex("0008af2f000000001976a914fd270b1ee6abcaea97fea7ad0402e8bd8ad6d77c88ac")]
-    scriptcode = bytes.fromhex("1976a91479091972186c449eb1ded22b78e40d009bdf008988ac")
-    value = int("00ca9a3b00000000", 16)
+    scriptcode = bytes.fromhex("1976a9141d0f172a0ecb48aee1be1f2687d2963ae33f71a188ac")
+    hex_bytes = bytes.fromhex("0046c32300000000")
+    big_endian_bytes = hex_bytes[::-1]
+    value = int.from_bytes(big_endian_bytes, byteorder='big')
     calculated = get_commitment_hash(outpoint, scriptcode, value, outputs)
-    expected = bytes.fromhex("64f3b0f4dd2bb3aa1ce8566d220cc74dda9df97d8490cc81d89d735c92e59fb6")
+    expected = bytes.fromhex("7b30936e6e132fdbc0e50cbb25f87b3fe9118f50468fa8017ed3cc7e9339cd62")
     ion_assert(calculated.hex(), expected.hex(), "test_get_commitment_hash")
     
 # Given a JSON utxo object and a list of all of our wallet's witness programs,
