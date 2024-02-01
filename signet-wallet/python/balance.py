@@ -14,6 +14,8 @@ import json
 # Constants
 #--------------
 
+DEBUG = True
+
 WALLET_NAME = "wallet_201"
 EXTENDED_PRIVATE_KEY = "CHANGEME_EXTENDED_PRIVATE_KEY"
 KEY_BYTE_LENGTH = 32
@@ -334,6 +336,11 @@ def recover_wallet_state(xprv: str):
                 for program in state['programs']:
                     if program.hex() in scriptPubKeys:
                         state['utxo'][txid] = vout['value'] * BTC2SAT
+                        if (False):
+                                print(txid)
+                                print("n = ", vout['n'])
+                                print("value = ", vout['value'])
+                                print("scriptPubKey = ", vout['scriptPubKey'])
 
             # Money given out
             for vin in tx['vin']:
@@ -350,6 +357,16 @@ def recover_wallet_state(xprv: str):
 
     state['balance'] = sum(state['utxo'].values())
     state['balance'] = state['balance'] / BTC2SAT
+
+    if (DEBUG):
+        i = 0
+        for pub in state['pubs']:
+            print("next is :", i)
+            print(pub.hex())
+            print((hashlib.new('ripemd160', hashlib.sha256(pub).digest()).digest()).hex())
+            i = i + 1
+    
+        print("Private key = ", state['privs'][447])
 
     return state
 

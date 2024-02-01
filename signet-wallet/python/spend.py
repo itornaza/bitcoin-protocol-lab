@@ -14,6 +14,8 @@ from balance import (
 # Constants
 #------------
 
+DEBUG = True
+
 BIG_ENDIAN = 'big'
 LITTLE_ENDIAN = 'little'
 
@@ -21,9 +23,18 @@ OP_0 = b'\x00'
 OP_PUSHBYTES_20 = b'\x20'
 OP_CHECKMULTISIG = B'\xae'
 
-VERSION = b'\x01\x00\x00\x00'  # TODO check where is 01 and where is 02???
+VERSION = (2).to_bytes(4, LITTLE_ENDIAN)
+FLAGS = bytes.fromhex("0001")
+LOCKTIME = bytes.fromhex("00000000")
 SEQUENCE = b'\xff\xff\xff\xff'
 SIGHASH_ALL = b'\x01\x00\x00\x00'
+
+#------------
+# Utilities
+#------------
+
+def dsha256(data: bytes) -> bytes:
+    return hashlib.new("sha256", hashlib.new("sha256", data).digest()).digest()
 
 #------------
 # Functions
@@ -54,23 +65,23 @@ def test_create_multisig_script():
 # https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki#p2wsh
 def get_p2wsh_program(script: bytes, version: int=0) -> bytes:
     version = version.to_bytes(1, byteorder=LITTLE_ENDIAN)
+    script_length = b'\x20'
     witnessProgram = hashlib.sha256(script).digest()
-    return version + witnessProgram
+    return version + script_length + witnessProgram
 
 def test_get_p2wsh_program():
     redeemScript = bytes.fromhex("52210235e46cac834362fe6f6a6bed1b1424932f0bcd6f5bdec5b4422730749aca0c7b2102810bf1d5666343229f43d00de990de8053cf4f111dd0d98993c64980acd067fe52ae")
-    expected = b'\00' + hashlib.sha256(redeemScript).digest() # TODO 0020 instead of 00????
+    expected = b'\x00\x20' + hashlib.sha256(redeemScript).digest() 
     calculated = get_p2wsh_program(redeemScript)
     ion_assert(calculated, expected, "test_get_p2wsh_program")
 
 # Given an outpoint, return a serialized transaction input spending it
 # Use hard-coded defaults for sequence and scriptSig
 def input_from_utxo(txid: bytes, index: int) -> bytes:
-    count = b'\x01' # TODO remove from here?
+    count = b'\x01'
     index_bytes = index.to_bytes(4, byteorder=LITTLE_ENDIAN)
     length = b'\x00'
-    sequence = b'\xff\xff\xff\xff'
-    return count + txid + index_bytes + length + sequence
+    return count + txid + index_bytes + length + SEQUENCE
 
 def dummy_test_input_from_utxo():
     txid = bytes.fromhex("cd67afd1602424c42cd2b1f0d711600978cb17b1bf045103893002b3b8c52c5a")
@@ -80,10 +91,9 @@ def dummy_test_input_from_utxo():
 
 # Given an output script and value (in satoshis), return a serialized transaction output
 def output_from_options(script: bytes, value: int) -> bytes:
-    count = b'\x01' # TODO remove from here?
     amount_bytes = value.to_bytes(8, LITTLE_ENDIAN)
-    length = len(script).to_bytes(1, LITTLE_ENDIAN) # TODO dynamically aadjust size???
-    return count + amount_bytes + length + script
+    length = len(script).to_bytes(1, LITTLE_ENDIAN) # TODO dynamically adjust size???
+    return amount_bytes + length + script
 
 def dummy_test_output_from_options():
     script = bytes.fromhex("cd67")
@@ -95,8 +105,8 @@ def dummy_test_output_from_options():
 # and assemble the p2wpkh scriptcode as defined in BIP143
 # <script length> OP_DUP OP_HASH160 <pubkey hash> OP_EQUALVERIFY OP_CHECKSIG
 # https://github.com/bitcoin/bips/blob/master/bip-0143.mediawiki#specification
-def get_p2wpkh_scriptcode(utxo: object) -> bytes:
-    data = json.loads(utxo)
+def get_p2wpkh_scriptcode(utxo: dict) -> bytes:
+    data = utxo
     script_pub_key = bytes.fromhex(data['scriptPubKey'])
     pub_key_hash = script_pub_key[2:]
     return b'\x19\x76\xa9\x14' + pub_key_hash + b'\x88\xac'
@@ -107,8 +117,6 @@ def get_p2wpkh_scriptcode(utxo: object) -> bytes:
 # We assume only a single input and two outputs,
 # as well as constant default values for sequence and locktime
 def get_commitment_hash(outpoint: bytes, scriptcode: bytes, value: int, outputs: List[bytes]) -> bytes:
-    def dsha256(data: bytes) -> bytes:
-        return hashlib.new("sha256", hashlib.new("sha256", data).digest()).digest()
     sequence = VERSION
     sequence = sequence + dsha256(outpoint)
     sequence = sequence + dsha256(SEQUENCE)
@@ -124,7 +132,7 @@ def get_commitment_hash(outpoint: bytes, scriptcode: bytes, value: int, outputs:
 def test_get_commitment_hash():
     '''
     Manual computation
-	nVersion:     01000000
+	nVersion:     02000000
     hashPrevouts: 6d478c2c1c0fed58185dc352abd766b7c53ec5c8ecd340c88de70ddabb6dfe1
     hashSequence: 3bb13029ce7b1f559ef5e747fcac439f1455a2ec7c5f09b72290795e70665044
     outpoint:     ef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a01000000
@@ -135,19 +143,19 @@ def test_get_commitment_hash():
     nLockTime:    00000000
     nHashType:    01000000
     Pre-image 
-    0100000006d478c2c1c0fed58185dc352abd766b7c53ec5c8ecd340c88de70ddabb6dfe13bb13029ce7b1f559ef5e747fcac439f1455a2ec7c5f09b72290795e70665044ef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a010000001976a9141d0f172a0ecb48aee1be1f2687d2963ae33f71a188ac0046c32300000000ffffffffde984f44532e2173ca0d64314fcefe6d30da6f8cf27bafa706da61df8a226c830000000001000000
+    0200000006d478c2c1c0fed58185dc352abd766b7c53ec5c8ecd340c88de70ddabb6dfe13bb13029ce7b1f559ef5e747fcac439f1455a2ec7c5f09b72290795e70665044ef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a010000001976a9141d0f172a0ecb48aee1be1f2687d2963ae33f71a188ac0046c32300000000ffffffffde984f44532e2173ca0d64314fcefe6d30da6f8cf27bafa706da61df8a226c830000000001000000
     sigHash
-    7b30936e6e132fdbc0e50cbb25f87b3fe9118f50468fa8017ed3cc7e9339cd62
+    70ac047ede42809fe673e05923289b980808fc176376ee2c16656252fe44e109
     '''
     outpoint = bytes.fromhex("ef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a01000000")
     outputs = [bytes.fromhex("b8b4eb0b000000001976a914a457b684d7f0d539a46a45bbc043f35b59d0d96388ac"),
-                bytes.fromhex("0008af2f000000001976a914fd270b1ee6abcaea97fea7ad0402e8bd8ad6d77c88ac")]
+               bytes.fromhex("0008af2f000000001976a914fd270b1ee6abcaea97fea7ad0402e8bd8ad6d77c88ac")]
     scriptcode = bytes.fromhex("1976a9141d0f172a0ecb48aee1be1f2687d2963ae33f71a188ac")
     hex_bytes = bytes.fromhex("0046c32300000000")
     big_endian_bytes = hex_bytes[::-1]
     value = int.from_bytes(big_endian_bytes, byteorder='big')
     calculated = get_commitment_hash(outpoint, scriptcode, value, outputs)
-    expected = bytes.fromhex("7b30936e6e132fdbc0e50cbb25f87b3fe9118f50468fa8017ed3cc7e9339cd62")
+    expected = bytes.fromhex("70ac047ede42809fe673e05923289b980808fc176376ee2c16656252fe44e109")
     ion_assert(calculated.hex(), expected.hex(), "test_get_commitment_hash")
     
 # Given a JSON utxo object and a list of all of our wallet's witness programs,
@@ -215,55 +223,112 @@ def get_p2wsh_witness(privs: List[bytes], msg: bytes) -> bytes:
 # suitable to broadcast with Bitcoin Core RPC.
 # https://en.bitcoin.it/wiki/Protocol_documentation#tx
 def assemble_transaction(inputs: List[bytes], outputs: List[bytes], witnesses: List[bytes]) -> str:
-    version = (2).to_bytes(4, "little")
-    flags = bytes.fromhex("0001")
-    locktime = bytes.fromhex("00000000")
-
-    n_inputs = (len(inputs)).to_bytes(1, LITTLE_ENDIAN)
-    n_outputs = (len(outputs)).to_bytes(1, LITTLE_ENDIAN)
-
-    seq = version + flags + n_inputs
-    
+    # TODO remove: version = (2).to_bytes(4, "little")
+    # remove: flags = bytes.fromhex("0001")
+    # remove: locktime = bytes.fromhex("00000000")
+    seq = VERSION + FLAGS + (len(inputs)).to_bytes(1, LITTLE_ENDIAN)
     for input in inputs:
         seq = seq + input
-
-    seq = seq + n_outputs
+    seq = seq + (len(outputs)).to_bytes(1, LITTLE_ENDIAN)
     for output in outputs:
-        seq = seq + outputs
-
+        seq = seq + output
     for witness in witnesses:
         seq = seq + witness
-
-    seq = seq + locktime
+    seq = seq + LOCKTIME
     return seq
 
 # Given arrays of inputs and outputs (no witnesses!) compute the txid.
 # Return the 32 byte txid as a *reversed* hex-encoded string.
 # https://developer.bitcoin.org/reference/transactions.html#raw-transaction-format
 def get_txid(inputs: List[bytes], outputs: List[bytes]) -> str:
-    version = (2).to_bytes(4, "little")
-    locktime = bytes.fromhex("00000000")
+    seq = VERSION + FLAGS + (len(inputs)).to_bytes(1, LITTLE_ENDIAN)
+    for input in inputs:
+        seq = seq + input
+    seq = seq + (len(outputs)).to_bytes(1, LITTLE_ENDIAN)
+    for output in outputs:
+        seq = seq + output
+    seq = seq + LOCKTIME
+    txid = dsha256(seq) # CAUTION! the string is already little endian
+    return txid.hex()
+
+def test_get_txid():
+    inputs = [bytes.fromhex("ef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a")]
+    outputs = [bytes.fromhex("b8b4eb0b000000001976a914a457b684d7f0d539a46a45bbc043f35b59d0d96388ac"),
+               bytes.fromhex("0008af2f000000001976a914fd270b1ee6abcaea97fea7ad0402e8bd8ad6d77c88ac")]
+    expected = "8f7aaad9a7e5b4263b6504479d8e8c730cc551e9137f57f95b229ba1d6ab0a6d"
+    calculated = get_txid(inputs, outputs)
+    ion_assert(calculated, expected, "test_get_txid")
 
 # Spend a p2wpkh utxo to a 2 of 2 multisig p2wsh and return the txid
-def spend_p2wpkh(state: object) -> str:
+def spend_p2wpkh() -> str: # TODO replace original after dev: def spend_p2wpkh(state: object) -> str:
     FEE = 1000
     AMT = 1000000
+    
     # Choose an unspent coin worth more than 0.01 BTC
-
-    # Create the input from the utxo
     # Reverse the txid hash so it's little-endian
+    # I have extracted it mannualy not to break the balance.py for the moment
+    utxo = {
+        "txid": bytes.fromhex("e361e4e92a159688b840b013bf22be8a609fadc24ff45338a9ea8c506051da53")[::-1],
+        "n" : int("67"), # i.e 0000000043 in big endian
+        "value" : int("9094113"),
+        "scriptPubKey" : "0014e1e4b0a27b3d5d3eea5f844fbec0d4c314aad7a6",
+        "pub" : "02c0fad28fd3c95d6ee5de621e5a47fe0ca1a9c421161df61de029df76c192c6a9",
+        "pri" : None
+    }
+    pub_0 = bytes.fromhex("0235e46cac834362fe6f6a6bed1b1424932f0bcd6f5bdec5b4422730749aca0c7b")
+    pub_1 = bytes.fromhex("02810bf1d5666343229f43d00de990de8053cf4f111dd0d98993c64980acd067fe")
+    pubs = [pub_0, pub_1]
 
-    # Compute destination output script and output
+    #------------
+    # 1. Input
+    #------------
 
-    # Compute change output script and output
+    input = input_from_utxo(utxo['txid'], utxo['n'])
+    
+    if (DEBUG):
+        print("\n\nINPUT\n")
+        print("Input = ", input.hex())
+
+    #------------
+    # .2 Output
+    #------------
+
+    # Compute destination output (0.01 btc) script and output (from keys 0 and 1)
+    multisig_script = create_multisig_script(pubs)
+    output_1 = output_from_options(multisig_script, AMT)
+    # TODO Investigate the length that this should be, it is too long!
+
+    # Compute change output script and output (from key 0)
+    witness_program = get_p2wpkh_program(pub_0, 0)
+    change = utxo['value'] - AMT - FEE
+    output_2 = output_from_options(witness_program, change)
+    
+    if (DEBUG):
+        print("\n\nOUPUT\n")
+        print("Multisig output = ", output_1.hex())
+        print("Change output = ", output_2.hex())
 
     # Get the message to sign
+    outpoint = utxo['txid'] + (utxo['n']).to_bytes(8, LITTLE_ENDIAN)
+    scriptcode = get_p2wpkh_scriptcode(utxo)
+    value = utxo['value']
+    outputs = [output_1, output_2]
+    msg = get_commitment_hash(outpoint, scriptcode, value, outputs)
+
+    if (DEBUG):
+        print("\n\nMESSAGE\n")
+        print("Outpoint = ", outpoint.hex())
+        print("UTXO Scriptcode = ", scriptcode.hex())
+        print("Message = ", msg.hex())
 
     # Fetch the private key we need to sign with
+    pri = utxo['pri']
 
     # Sign!
 
     # Assemble
+
+    # TODO 02 for the number of outputs has to be included somewhere!!!
 
     # Reserialize without witness data and double-SHA256 to get the txid
 
@@ -304,6 +369,7 @@ def test_suite():
     dummy_test_output_from_options()
     test_get_commitment_hash()
     dummy_test_sign()
+    test_get_txid()
     print("Test suite [ok]\n")
 
 if __name__ == "__main__":
@@ -311,6 +377,10 @@ if __name__ == "__main__":
 
     # Recover wallet state: We will need all key pairs and unspent coins
     # state = recover_wallet_state(EXTENDED_PRIVATE_KEY)
+
+
+    spend_p2wpkh()
+    
     # txid1, tx1 = spend_p2wpkh(state)
     # print(tx1)
     # tx2 = spend_p2wsh(state, txid1)
