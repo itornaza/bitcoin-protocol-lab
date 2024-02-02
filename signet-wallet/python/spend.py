@@ -14,20 +14,22 @@ from balance import (
 # Constants
 #------------
 
-DEBUG = True
+DEBUG = False
 
 BIG_ENDIAN = 'big'
 LITTLE_ENDIAN = 'little'
 
 OP_0 = b'\x00'
+OP_2 = b'\x52'
 OP_PUSHBYTES_20 = b'\x20'
-OP_CHECKMULTISIG = B'\xae'
+OP_CHECKMULTISIG = b'\xae'
 
 VERSION = (2).to_bytes(4, LITTLE_ENDIAN)
 FLAGS = bytes.fromhex("0001")
 LOCKTIME = bytes.fromhex("00000000")
 SEQUENCE = b'\xff\xff\xff\xff'
 SIGHASH_ALL = b'\x01\x00\x00\x00'
+SIGHASH_ALL_ONE_BYTE = b'\x01'
 
 #------------
 # Utilities
@@ -49,6 +51,7 @@ def create_multisig_script(keys: List[bytes]) -> bytes:
     data = json.loads(json_string)
     redeemScript = bytes.fromhex(data['redeemScript'])
     return redeemScript
+    # TODO compare with: OP_2 + b'\x21' + keys[0] + b'\x21' + keys[1] + OP_2 OP_CHECKMULTISIG
 
 def test_create_multisig_script():
     # Actual 84h/1h/0h/0/0 and 84h/1h/0h/0/1 pubs from (https://bip32jp.github.io/english/)
@@ -78,10 +81,9 @@ def test_get_p2wsh_program():
 # Given an outpoint, return a serialized transaction input spending it
 # Use hard-coded defaults for sequence and scriptSig
 def input_from_utxo(txid: bytes, index: int) -> bytes:
-    count = b'\x01'
     index_bytes = index.to_bytes(4, byteorder=LITTLE_ENDIAN)
     length = b'\x00'
-    return count + txid + index_bytes + length + SEQUENCE
+    return txid + index_bytes + length + SEQUENCE
 
 def dummy_test_input_from_utxo():
     txid = bytes.fromhex("cd67afd1602424c42cd2b1f0d711600978cb17b1bf045103893002b3b8c52c5a")
@@ -179,16 +181,16 @@ def get_key_index(utxo: object, programs: List[str]) -> int:
 # - Must have a low s value as defined by BIP 62:
 #   https://github.com/bitcoin/bips/blob/master/bip-0062.mediawiki#user-content-Low_S_values_in_signatures
 def sign(priv: bytes, msg: bytes) -> bytes:
-    while True:
-        # Keep signing until we produce a signature with "low s value"
-        # We will have to decode the DER-encoded signature and extract the s value to check it
-        # Format: 0x30 [total-length] 0x02 [R-length] [R] 0x02 [S-length] [S] [sighash]
-        signing_key = SigningKey.from_string(priv, curve=SECP256k1)
-        signature = signing_key.sign_deterministic(msg, hashfunc=hashlib.sha256, sigencode=util.sigencode_der)
-        der_signature = util.sigdecode_der(signature, signing_key.curve.order)
-        r, s = der_signature
-        if 0 < s < signing_key.curve.order // 2:
-            return signature
+    # while True:
+    # Keep signing until we produce a signature with "low s value"
+    # We will have to decode the DER-encoded signature and extract the s value to check it
+    # Format: 0x30 [total-length] 0x02 [R-length] [R] 0x02 [S-length] [S] [sighash]
+    sk = SigningKey.from_string(priv, curve=SECP256k1)
+    signature = sk.sign_deterministic(msg, hashfunc=hashlib.sha256, sigencode=util.sigencode_der)
+    r, s = util.sigdecode_der(signature, SECP256k1.order)
+    if s > sk.curve.order / 2:
+        s = sk.curve.order - s
+    return signature + SIGHASH_ALL_ONE_BYTE
 
 def dummy_test_sign():
     # Test case (https://en.bitcoin.it/wiki/BIP_0032_TestVectors)
@@ -279,32 +281,38 @@ def spend_p2wpkh() -> str: # TODO replace original after dev: def spend_p2wpkh(s
     pub_1 = bytes.fromhex("02810bf1d5666343229f43d00de990de8053cf4f111dd0d98993c64980acd067fe")
     pubs = [pub_0, pub_1]
 
-    #------------
+    pri_0 = bytes(32)
+    pri_1 = bytes(32)
+
+    #-------------
     # 1. Input
-    #------------
+    #-------------
 
     input = input_from_utxo(utxo['txid'], utxo['n'])
+    inputs = [input]
     
     if (DEBUG):
-        print("\n\nINPUT\n")
+        print("\n\n> INPUT\n")
         print("Input = ", input.hex())
 
-    #------------
-    # .2 Output
-    #------------
+    #--------------
+    # 2. Output
+    #--------------
 
     # Compute destination output (0.01 btc) script and output (from keys 0 and 1)
-    multisig_script = create_multisig_script(pubs)
-    output_1 = output_from_options(multisig_script, AMT)
-    # TODO Investigate the length that this should be, it is too long!
+    multisig_script = create_multisig_script([pub_0, pub_1])
+    p2wsh_witness_program = get_p2wsh_program(multisig_script, 0)
+    output_1 = output_from_options(p2wsh_witness_program, AMT)
 
     # Compute change output script and output (from key 0)
-    witness_program = get_p2wpkh_program(pub_0, 0)
+    p2wpkh_witness_program = get_p2wpkh_program(pub_0, 0)
     change = utxo['value'] - AMT - FEE
-    output_2 = output_from_options(witness_program, change)
+    output_2 = output_from_options(p2wpkh_witness_program, change)
     
+    outputs = [output_1, output_2]
+
     if (DEBUG):
-        print("\n\nOUPUT\n")
+        print("\n> OUPUT\n")
         print("Multisig output = ", output_1.hex())
         print("Change output = ", output_2.hex())
 
@@ -312,31 +320,29 @@ def spend_p2wpkh() -> str: # TODO replace original after dev: def spend_p2wpkh(s
     outpoint = utxo['txid'] + (utxo['n']).to_bytes(8, LITTLE_ENDIAN)
     scriptcode = get_p2wpkh_scriptcode(utxo)
     value = utxo['value']
-    outputs = [output_1, output_2]
     msg = get_commitment_hash(outpoint, scriptcode, value, outputs)
 
     if (DEBUG):
-        print("\n\nMESSAGE\n")
+        print("\n> MESSAGE\n")
         print("Outpoint = ", outpoint.hex())
-        print("UTXO Scriptcode = ", scriptcode.hex())
-        print("Message = ", msg.hex())
+        print("\nUTXO Scriptcode = ", scriptcode.hex())
+        print("\nMessage = ", msg.hex())
 
-    # Fetch the private key we need to sign with
-    pri = utxo['pri']
-
-    # Sign!
+    # Sign! with the private key for the coin we are spending
+    p2wpkh_witness = get_p2wpkh_witness(utxo['pri'], msg)
+    if (DEBUG):
+        print("p2wpkh_witness = ", p2wpkh_witness.hex())
 
     # Assemble
-
-    # TODO 02 for the number of outputs has to be included somewhere!!!
+    final = assemble_transaction(inputs, outputs, [p2wpkh_witness])
+    if (DEBUG):
+        print("Final = ", final.hex())
 
     # Reserialize without witness data and double-SHA256 to get the txid
+    txid = get_txid(inputs, outputs)
 
     # For debugging you can use RPC `testmempoolaccept ["<final hex>"]` here
-
-    # return txid, final
-    pass
-
+    return txid, final
 
 # Spend a 2-of-2 multisig p2wsh utxo and return the txid
 def spend_p2wsh(state: object, txid: str) -> str:
@@ -373,15 +379,12 @@ def test_suite():
     print("Test suite [ok]\n")
 
 if __name__ == "__main__":
-    test_suite()
+    # test_suite()
 
     # Recover wallet state: We will need all key pairs and unspent coins
     # state = recover_wallet_state(EXTENDED_PRIVATE_KEY)
+    txid1, tx1 = spend_p2wpkh() # spend_p2wpkh(state)
+    print(tx1)
 
-
-    spend_p2wpkh()
-    
-    # txid1, tx1 = spend_p2wpkh(state)
-    # print(tx1)
     # tx2 = spend_p2wsh(state, txid1)
     # print(tx2)
