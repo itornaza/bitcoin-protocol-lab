@@ -23,7 +23,7 @@ LITTLE_ENDIAN = 'little'
 
 # Bytes
 VERSION = b'\x02\x00\x00\x00'
-FLAGS = b'\x00\x00\x00\x01'
+FLAGS = b'\x00\x01'
 LOCKTIME = b'\x00\x00\x00\x00'
 SEQUENCE = b'\xff\xff\xff\xff'
 SIGHASH_ALL = b'\x01\x00\x00\x00'
@@ -84,8 +84,8 @@ def test_get_p2wsh_program():
 # Use hard-coded defaults for sequence and scriptSig
 def input_from_utxo(txid: bytes, index: int) -> bytes:
     index_bytes = index.to_bytes(4, byteorder=LITTLE_ENDIAN)
-    length = b'\x00'
-    return txid + index_bytes + length + SEQUENCE
+    script_length = b'\x00'
+    return txid + index_bytes + script_length + SEQUENCE
 
 def test_input_from_utxo():
     txid = bytes.fromhex("ef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a")
@@ -97,7 +97,8 @@ def test_input_from_utxo():
 # Given an output script and value (in satoshis), return a serialized transaction output
 def output_from_options(script: bytes, value: int) -> bytes:
     amount = value.to_bytes(8, LITTLE_ENDIAN)
-    return amount + script # TODO Length is embedded in the script
+    script_length = (len(script)).to_bytes(1, byteorder=LITTLE_ENDIAN)
+    return amount + script_length + script
 
 def test_output_from_options():
     # Test data from (https://github.com/bitcoin/bips/blob/master/bip-0143.mediawiki#specification)
@@ -243,13 +244,13 @@ def get_p2wsh_witness(privs: List[bytes], msg: bytes) -> bytes:
 def assemble_transaction(inputs: List[bytes], outputs: List[bytes], witnesses: List[bytes]) -> str:
     seq = VERSION + FLAGS + (len(inputs)).to_bytes(1, LITTLE_ENDIAN)
     for input in inputs:
-        seq = seq + input
+        seq += input
     seq = seq + (len(outputs)).to_bytes(1, LITTLE_ENDIAN)
     for output in outputs:
-        seq = seq + output
+        seq += output
     for witness in witnesses:
-        seq = seq + witness
-    seq = seq + LOCKTIME
+        seq += witness
+    seq += LOCKTIME
     return seq
 
 # Given arrays of inputs and outputs (no witnesses!) compute the txid.
@@ -394,7 +395,7 @@ def test_suite():
     print("Test suite [ok]\n")
 
 if __name__ == "__main__":
-    test_suite()
+    # test_suite()
 
     # Recover wallet state: We will need all key pairs and unspent coins
     # state = recover_wallet_state(EXTENDED_PRIVATE_KEY)

@@ -252,7 +252,7 @@ def test_get_wallet_privs():
 def get_p2wpkh_program(pubkey: bytes, version: int=0) -> bytes:
     OP_0 = version.to_bytes(1, byteorder=BYTE_ORDER)
     OP_PUSHBYTES_20 = b'\x14'
-    witness_program = hash160(pubkey) # hashlib.new('ripemd160', hashlib.sha256(pubkey).digest()).digest()
+    witness_program = hash160(pubkey)
     scriptPubKey = OP_0 + OP_PUSHBYTES_20 + witness_program
     return scriptPubKey
 
