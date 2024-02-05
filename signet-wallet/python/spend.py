@@ -15,7 +15,7 @@ from balance import (
 # Constants
 #------------
 
-DEBUG = True
+DEBUG = False
 
 # Attributes
 BIG_ENDIAN = 'big'
@@ -259,11 +259,11 @@ def assemble_transaction(inputs: List[bytes], outputs: List[bytes], witnesses: L
 def get_txid(inputs: List[bytes], outputs: List[bytes]) -> str:
     seq = VERSION + FLAGS + (len(inputs)).to_bytes(1, LITTLE_ENDIAN)
     for input in inputs:
-        seq = seq + input
+        seq += input
     seq = seq + (len(outputs)).to_bytes(1, LITTLE_ENDIAN)
     for output in outputs:
-        seq = seq + output
-    seq = seq + LOCKTIME
+        seq += output
+    seq += LOCKTIME
     txid = dsha256(seq) # CAUTION! the string is already little endian
     return txid.hex()
 
