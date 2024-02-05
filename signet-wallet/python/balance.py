@@ -14,7 +14,7 @@ import json
 # Constants
 #--------------
 
-DEBUG = True
+DEBUG = False
 
 WALLET_NAME = "wallet_201"
 EXTENDED_PRIVATE_KEY = "CHANGEME_EXTENDED_PRIVATE_KEY"
@@ -34,6 +34,9 @@ def ion_assert(calculated, expected, test_name):
 def ion_int_to_bytes(index: int, n_bytes: int) -> bytes:
     index_bytes = index.to_bytes(n_bytes, byteorder=BYTE_ORDER)
     return index_bytes
+
+def hash160(pubKey: bytes) -> bytes:
+    return hashlib.new('ripemd160', hashlib.sha256(pubKey).digest()).digest()
 
 #--------------
 # Functions
@@ -249,7 +252,7 @@ def test_get_wallet_privs():
 def get_p2wpkh_program(pubkey: bytes, version: int=0) -> bytes:
     OP_0 = version.to_bytes(1, byteorder=BYTE_ORDER)
     OP_PUSHBYTES_20 = b'\x14'
-    witness_program = hashlib.new('ripemd160', hashlib.sha256(pubkey).digest()).digest()
+    witness_program = hash160(pubkey) # hashlib.new('ripemd160', hashlib.sha256(pubkey).digest()).digest()
     scriptPubKey = OP_0 + OP_PUSHBYTES_20 + witness_program
     return scriptPubKey
 
@@ -282,6 +285,7 @@ def bcli(cmd: str):
 # - Request blocks 0-310 from Bitcoin Core via RPC and scan all transactions
 # - Return a state object with all the derived keys and total wallet balance
 def recover_wallet_state(xprv: str):
+    
     #---------------------------------------------------------------
     # Generate all the keypairs and witness programs to search for
     #---------------------------------------------------------------
@@ -335,39 +339,30 @@ def recover_wallet_state(xprv: str):
                 scriptPubKeys = vout['scriptPubKey']['hex']
                 for program in state['programs']:
                     if program.hex() in scriptPubKeys:
-                        state['utxo'][txid] = vout['value'] * BTC2SAT
-                        if (False):
-                                print(txid)
-                                print("n = ", vout['n'])
-                                print("value = ", vout['value'])
-                                print("scriptPubKey = ", vout['scriptPubKey'])
+                        # Implement UTXO as a hashmap using txid
+                        state['utxo'][txid] = { 
+                            'value' : vout['value'] * BTC2SAT,
+                            'n' : vout['n'],
+                            'scriptPubKey' : vout['scriptPubKey']['hex']
+                        }
 
             # Money given out
             for vin in tx['vin']:
-                outpoint = vin['txid']
+                txid = vin['txid']
                 witness = vin['txinwitness'][1]
                 for pub in state['pubs']:
                     if pub.hex() == witness:
-                        if outpoint in state['utxo']:
-                            del state['utxo'][outpoint]
+                        if txid in state['utxo']:
+                            del state['utxo'][txid]
 
-    #-----------------------------
-    # Analyze the remaining UTXOS
-    #-----------------------------
-
-    state['balance'] = sum(state['utxo'].values())
-    state['balance'] = state['balance'] / BTC2SAT
-
-    if (DEBUG):
-        i = 0
-        for pub in state['pubs']:
-            print("next is :", i)
-            print(pub.hex())
-            print((hashlib.new('ripemd160', hashlib.sha256(pub).digest()).digest()).hex())
-            i = i + 1
+    #--------------------------------------
+    # Extract the total value from UTXOs
+    #--------------------------------------
+                            
+    for txid in state['utxo']:
+        state['balance'] += state['utxo'][txid]['value']
+    state['balance'] /= BTC2SAT
     
-        print("Private key = ", state['privs'][447])
-
     return state
 
 def test_suite():
