@@ -205,12 +205,12 @@ def sign(priv: bytes, msg: bytes) -> bytes:
     # Notice that we need to sha256 the mesage before signing it
     # Format: 0x30 [total-length] 0x02 [R-length] [R] 0x02 [S-length] [S] [sighash]
     # Caution! The message has to be already double sha256 digested
-    sk = SigningKey.from_string(priv, curve=SECP256k1)
-    signature = sk.sign_digest(msg, sigencode=util.sigencode_der)
-    r, s = util.sigdecode_der(signature, SECP256k1.order)
-    if s > sk.curve.order / 2:
-        s = sk.curve.order - s
-    return signature + SIGHASH_ALL_ONE_BYTE
+    while True:
+        sk = SigningKey.from_string(priv, curve=SECP256k1)
+        signature = sk.sign_digest(msg, sigencode=util.sigencode_der)
+        r, s = util.sigdecode_der(signature, SECP256k1.order)
+        if s < sk.curve.order / 2:
+            return signature + SIGHASH_ALL_ONE_BYTE
 
 # Given a private key and transaction commitment hash to sign,
 # compute the signature and assemble the serialized p2pkh witness
