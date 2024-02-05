@@ -257,7 +257,7 @@ def assemble_transaction(inputs: List[bytes], outputs: List[bytes], witnesses: L
 # Return the 32 byte txid as a *reversed* hex-encoded string.
 # https://developer.bitcoin.org/reference/transactions.html#raw-transaction-format
 def get_txid(inputs: List[bytes], outputs: List[bytes]) -> str:
-    seq = VERSION + FLAGS + (len(inputs)).to_bytes(1, LITTLE_ENDIAN)
+    seq = VERSION + (len(inputs)).to_bytes(1, LITTLE_ENDIAN) # Exclude the flags
     for input in inputs:
         seq += input
     seq = seq + (len(outputs)).to_bytes(1, LITTLE_ENDIAN)
@@ -265,7 +265,7 @@ def get_txid(inputs: List[bytes], outputs: List[bytes]) -> str:
         seq += output
     seq += LOCKTIME
     txid = dsha256(seq) # CAUTION! the string is already little endian
-    return txid.hex()
+    return (txid[::-1]).hex()
 
 def test_get_txid():
     inputs = [bytes.fromhex("ef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a")]
@@ -356,7 +356,7 @@ def spend_p2wpkh() -> str: # TODO replace original after dev: def spend_p2wpkh(s
     # Reserialize without witness data and double-SHA256 to get the txid
     txid = get_txid(inputs, outputs)
 
-    # For debugging you can use RPC `testmempoolaccept ["<final hex>"]` here
+    # For debugging you can use RPC: bitcoin-cli testmempoolaccept '["<final hex>"]'
     return txid, final.hex()
 
 # Spend a 2-of-2 multisig p2wsh utxo and return the txid
@@ -377,7 +377,7 @@ def spend_p2wsh(txid: str) -> str: # def spend_p2wsh(state: object, txid: str) -
 
     # Assemble
 
-    # For debugging you can use RPC `testmempoolaccept ["<final hex>"]` here
+    # For debugging you can use RPC: bitcoin-cli testmempoolaccept '["<final hex>"]'
     
     # return finalhex
     pass
@@ -400,7 +400,6 @@ if __name__ == "__main__":
     # Recover wallet state: We will need all key pairs and unspent coins
     # state = recover_wallet_state(EXTENDED_PRIVATE_KEY)
     txid1, tx1 = spend_p2wpkh() # Original: `spend_p2wpkh(state)`
-    print(txid1)
     print(tx1)
 
     tx2 = spend_p2wsh(txid1) # Original: `spend_p2wsh(state, txid1)`
