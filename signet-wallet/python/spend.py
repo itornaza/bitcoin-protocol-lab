@@ -44,6 +44,9 @@ def sha256(data: bytes) -> bytes:
 def length(data: bytes) -> bytes:
     return (len(data)).to_bytes(1, byteorder=LITTLE_ENDIAN)
 
+def int_to_bytes(number: int, n_bytes: int):
+    return number.to_bytes(n_bytes, byteorder=LITTLE_ENDIAN)
+
 def reverse_endian(seq: bytes) -> bytes:
     return seq[::-1]
 
@@ -61,7 +64,11 @@ def test_reverse_endian():
 def create_multisig_script(keys: List[bytes]) -> bytes:
     if len(keys) != 2:
         raise Exception("\n-> create_multisig_script expects a two element list!\n")
-    return OP_2 + length(keys[0]) + keys[0] + length(keys[1]) + keys[1] + OP_2 + OP_CHECKMULTISIG
+    script = OP_2 + \
+             length(keys[0]) + keys[0] + \
+             length(keys[1]) + keys[1] + \
+             OP_2 + OP_CHECKMULTISIG
+    return script
 
 def test_create_multisig_script():
     # Actual 84h/1h/0h/0/0 and 84h/1h/0h/0/1 pubs from (https://bip32jp.github.io/english/)
@@ -79,7 +86,7 @@ def test_create_multisig_script():
 # This is a segwit version 0 pay-to-script-hash witness program.
 # https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki#p2wsh
 def get_p2wsh_program(script: bytes, version: int=0) -> bytes:
-    version = version.to_bytes(1, byteorder=LITTLE_ENDIAN)
+    version = int_to_bytes(version, 1)
     witness_program = sha256(script)
     return version + length(witness_program) + witness_program
 
@@ -92,9 +99,16 @@ def test_get_p2wsh_program():
 # Given an outpoint, return a serialized transaction input spending it
 # Use hard-coded defaults for sequence and scriptSig
 def input_from_utxo(txid: bytes, index: int) -> bytes:
-    index_bytes = index.to_bytes(4, byteorder=LITTLE_ENDIAN)
-    script_length = b'\x00'
-    return txid + index_bytes + script_length + SEQUENCE
+    # 1. previous_output outpoint, the previous output transaction reference, as an OutPoint structure
+    # 1.1 hash, the hash of the referenced transaction (32 bytes)
+    # 1.2 index, the index of the specific output in the transaction
+    input = txid + int_to_bytes(index, 4)
+    # 2. script length, the length of the signature script (1+ bytes)
+    input += b'\x00'
+    # 3. signature script, computational Script for confirming transaction authorization (? bytes)
+    # 4. sequence (4 bytes)
+    input += SEQUENCE
+    return input
 
 def test_input_from_utxo():
     txid = bytes.fromhex("ef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a")
@@ -105,8 +119,13 @@ def test_input_from_utxo():
 
 # Given an output script and value (in satoshis), return a serialized transaction output
 def output_from_options(script: bytes, value: int) -> bytes:
-    amount = value.to_bytes(8, LITTLE_ENDIAN)
-    return amount + length(script) + script
+    # 1. value, transaction Value (8 bytes)
+    output = int_to_bytes(value, 8)
+    # 2. pk_script length, ength of the pk_script (1+ bytes)
+    output += length(script)
+    # 3. pk_script, public key as script setting up conditions to claim this output (? bytes)
+    output += script
+    return output
 
 def test_output_from_options():
     # Test data from (https://github.com/bitcoin/bips/blob/master/bip-0143.mediawiki#specification)
@@ -138,17 +157,27 @@ def test_get_p2wpkh_scriptcode():
 # We assume only a single input and two outputs,
 # as well as constant default values for sequence and locktime
 def get_commitment_hash(outpoint: bytes, scriptcode: bytes, value: int, outputs: List[bytes]) -> bytes:
-    sequence = VERSION
-    sequence += dsha256(outpoint)
-    sequence += dsha256(SEQUENCE)
-    sequence += outpoint
-    sequence += scriptcode
-    sequence += (value).to_bytes(8, LITTLE_ENDIAN)
-    sequence += SEQUENCE
-    sequence += dsha256(outputs[0] + outputs[1])
-    sequence += LOCKTIME
-    sequence += SIGHASH_ALL
-    return dsha256(sequence)
+    # 1. nVersion of the transaction (4-byte little endian)
+    seq = VERSION
+    # 2. hashPrevouts (32-byte hash)
+    seq += dsha256(outpoint)
+    # 3. hashSequence (32-byte hash)
+    seq += dsha256(SEQUENCE)
+    # 4. outpoint (32-byte hash + 4-byte little endian) 
+    seq += outpoint
+    # 5. scriptCode of the input (serialized as scripts inside CTxOuts)
+    seq += scriptcode
+    # 6. value of the output spent by this input (8-byte little endian)
+    seq += int_to_bytes(value, 8)
+    # 7. nSequence of the input (4-byte little endian)
+    seq += SEQUENCE
+    # 8. hashOutputs (32-byte hash)
+    seq += dsha256(outputs[0] + outputs[1])
+    # 9. nLocktime of the transaction (4-byte little endian)
+    seq += LOCKTIME
+    # 10. sighash type of the signature (4-byte little endian)
+    seq += SIGHASH_ALL
+    return dsha256(seq)
 
 def test_get_commitment_hash():
     '''
@@ -189,7 +218,7 @@ def get_key_index(state: dict) -> int:
     # n : 67 
     # scriptPubKey : 0014e1e4b0a27b3d5d3eea5f844fbec0d4c314aad7a6
     txid = "e361e4e92a159688b840b013bf22be8a609fadc24ff45338a9ea8c506051da53"
-    
+
     # Calculate the programs locally
     programs = []
     for pub in state['pubs']:
@@ -250,10 +279,17 @@ def get_p2wsh_witness(privs: List[bytes], msg: bytes) -> bytes:
     sig_2 = sign(privs[1], msg)
     pub_1 = get_pub_from_priv(privs[0])
     pub_2 = get_pub_from_priv(privs[1])
-    witness = n_items + OP_0 + length(sig_1) + sig_1 + length(sig_2) + sig_2
-    witness_script = OP_2 + length(pub_1) + pub_1 + length(pub_2) + pub_2 + OP_2 + OP_CHECKMULTISIG
-    witness_script_length = length(witness_script)
-    witness += witness_script_length + witness_script
+    
+    witness_script = OP_2 + \
+                     length(pub_1) + pub_1 + \
+                     length(pub_2) + pub_2 + \
+                     OP_2 + OP_CHECKMULTISIG
+    
+    witness = n_items + OP_0 + \
+              length(sig_1) + sig_1 + \
+              length(sig_2) + sig_2 + \
+              length(witness_script) + witness_script
+    
     return witness
 
 # Given arrays of inputs, outputs, and witnesses, assemble the complete
@@ -261,14 +297,24 @@ def get_p2wsh_witness(privs: List[bytes], msg: bytes) -> bytes:
 # suitable to broadcast with Bitcoin Core RPC.
 # https://en.bitcoin.it/wiki/Protocol_documentation#tx
 def assemble_transaction(inputs: List[bytes], outputs: List[bytes], witnesses: List[bytes]) -> str:
-    seq = VERSION + FLAGS + length(inputs)
+    # 1. version, transaction data format version (4 bytes)
+    seq = VERSION
+    # 2. flag, always 0001, and indicates the presence of witness data (2 bytes)
+    seq += FLAGS
+    # 3. tx_in count, number of Transaction inputs (1+ bytes) 
+    seq += length(inputs)
+    # 4. tx_in[], a list of 1 or more transaction inputs (41+ bytes)
     for input in inputs:
         seq += input
-    seq = seq + length(outputs)
+    # 5. tx_out count, number of Transaction outputs (1+ bytes)
+    seq += length(outputs)
+    # 6. tx_out[], a list of 1 or more transaction outputs (9+ bytes)
     for output in outputs:
         seq += output
+    # 7. tx_witness[], a list of witnesses, one for each input (0+ bytes)
     for witness in witnesses:
         seq += witness
+    # 8. lock_time (4 bytes)
     seq += LOCKTIME
     return seq
 
@@ -276,12 +322,19 @@ def assemble_transaction(inputs: List[bytes], outputs: List[bytes], witnesses: L
 # Return the 32 byte txid as a *reversed* hex-encoded string.
 # https://developer.bitcoin.org/reference/transactions.html#raw-transaction-format
 def get_txid(inputs: List[bytes], outputs: List[bytes]) -> str:
-    seq = VERSION + length(inputs)
+    # 1. Version (4 bytes)
+    seq = VERSION
+    # 2. tx_in count
+    seq += length(inputs)
+    # 3. tx_in[], transaction inputs
     for input in inputs:
         seq += input
-    seq = seq + length(outputs)
+    # 4. tx_out count
+    seq += length(outputs)
+    # 5. tx_out[], transaction outputs 
     for output in outputs:
         seq += output
+    # 6. lock_time (4 bytes)
     seq += LOCKTIME
     txid = dsha256(seq)
     return (reverse_endian(txid)).hex()
@@ -333,7 +386,7 @@ def spend_p2wpkh() -> str: # TODO replace original after dev: def spend_p2wpkh(s
     #----------------
 
     # Get the message to sign
-    outpoint = utxo_txid + (utxo['n']).to_bytes(8, LITTLE_ENDIAN)
+    outpoint = utxo_txid + int_to_bytes(utxo['n'], 4)
     scriptcode = get_p2wpkh_scriptcode(utxo)
     value = utxo['value']
     sighash = get_commitment_hash(outpoint, scriptcode, value, [output_1, output_2])
@@ -397,7 +450,7 @@ def test_suite():
     print("Test suite - [ok]\n")
 
 if __name__ == "__main__":
-    test_suite()
+    # test_suite()
 
     # Recover wallet state: We will need all key pairs and unspent coins
     # state = recover_wallet_state(EXTENDED_PRIVATE_KEY)
