@@ -30,6 +30,7 @@ OP_0 = b'\x00'
 OP_2 = b'\x52'
 OP_3 = b'\x53'
 OP_CHECKMULTISIG = b'\xae'
+OP_RETURN = b'\x6a'
 
 #------------
 # Utilities
@@ -172,7 +173,10 @@ def get_commitment_hash(outpoint: bytes, scriptcode: bytes, value: int, outputs:
     # 7. nSequence of the input (4-byte little endian)
     seq += SEQUENCE
     # 8. hashOutputs (32-byte hash)
-    seq += dsha256(outputs[0] + outputs[1])
+    outputs_seq = bytes()
+    for output in outputs:
+        outputs_seq += output
+    seq += dsha256(outputs_seq)
     # 9. nLocktime of the transaction (4-byte little endian)
     seq += LOCKTIME
     # 10. sighash type of the signature (4-byte little endian)
@@ -274,7 +278,7 @@ def get_p2wpkh_witness(priv: bytes, msg: bytes) -> bytes:
 # Remember to add a 0x00 byte as the first witness element for CHECKMULTISIG bug
 # https://github.com/bitcoin/bips/blob/master/bip-0147.mediawiki
 def get_p2wsh_witness(privs: List[bytes], msg: bytes) -> bytes:
-    n_items = b'\x03' # TODO or b'\x04'???
+    n_items = b'\x04'
     sig_1 = sign(privs[0], msg)
     sig_2 = sign(privs[1], msg)
     pub_1 = get_pub_from_priv(privs[0])
@@ -340,14 +344,14 @@ def get_txid(inputs: List[bytes], outputs: List[bytes]) -> str:
     return (reverse_endian(txid)).hex()
 
 # Spend a p2wpkh utxo to a 2 of 2 multisig p2wsh and return the txid
-def spend_p2wpkh() -> str: # TODO replace original after dev: def spend_p2wpkh(state: object) -> str:
+def spend_p2wpkh() -> str:
     FEE = 1000
     AMT = 1000000
-    
+
     # Choose an unspent coin worth more than 0.01 BTC and 
     utxo = {
         "txid": bytes.fromhex("e361e4e92a159688b840b013bf22be8a609fadc24ff45338a9ea8c506051da53"),
-        "n" : int("67"), # i.e 00000043 in big endian or 43000000 in little
+        "n" : int("67"),
         "value" : int("9094113"),
         "scriptPubKey" : "0014e1e4b0a27b3d5d3eea5f844fbec0d4c314aad7a6",
         "pub" : "02c0fad28fd3c95d6ee5de621e5a47fe0ca1a9c421161df61de029df76c192c6a9",
@@ -358,18 +362,13 @@ def spend_p2wpkh() -> str: # TODO replace original after dev: def spend_p2wpkh(s
     pub_0 = bytes.fromhex("0235e46cac834362fe6f6a6bed1b1424932f0bcd6f5bdec5b4422730749aca0c7b")
     pub_1 = bytes.fromhex("02810bf1d5666343229f43d00de990de8053cf4f111dd0d98993c64980acd067fe")
 
+    # 1. Inputs
+
     # Reverse the txid hash so it's little-endian
     utxo_txid = reverse_endian(utxo['txid'])
-
-    #-------------
-    # 1. Inputs
-    #-------------
-
     input = input_from_utxo(utxo_txid, utxo['n'])
 
-    #--------------
     # 2. Outputs
-    #--------------
 
     # Compute destination output (0.01 btc) script and output (from keys 0 and 1)
     multisig_script = create_multisig_script([pub_0, pub_1])
@@ -381,9 +380,7 @@ def spend_p2wpkh() -> str: # TODO replace original after dev: def spend_p2wpkh(s
     change = utxo['value'] - AMT - FEE
     output_2 = output_from_options(p2wpkh_witness_program, change)
 
-    #----------------
-    # 3. Signatures
-    #----------------
+    # 3. sigHash and Witness
 
     # Get the message to sign
     outpoint = utxo_txid + int_to_bytes(utxo['n'], 4)
@@ -391,16 +388,11 @@ def spend_p2wpkh() -> str: # TODO replace original after dev: def spend_p2wpkh(s
     value = utxo['value']
     sighash = get_commitment_hash(outpoint, scriptcode, value, [output_1, output_2])
 
-    # TODO Sign the digest with the private key for the coin we are spending!
-    # I am not using it anywhere though!
-    signature = sign(utxo['pri'], sighash)
-
-    # Create a transaction witness with the signature and public key
+    # Create a transaction witness with the signature and private key
+    # Sign the digest with the private key for the coin we are spending!
     p2wpkh_witness = get_p2wpkh_witness(utxo['pri'], sighash)
 
-    #----------------
-    # 4. Wrap up
-    #----------------
+    # 4. Serialize
 
     # Assembly
     final = assemble_transaction([input], [output_1, output_2], [p2wpkh_witness])
@@ -411,31 +403,74 @@ def spend_p2wpkh() -> str: # TODO replace original after dev: def spend_p2wpkh(s
     # For debugging you can use RPC: bitcoin-cli testmempoolaccept '["<final hex>"]'
     return txid, final.hex()
 
+def test_txid():
+    expected_txid = "d142633bc6cf0dbbf6c0140d9059763434fd9b388259ed2611059ea82fbfb6df"
+    calculated_txid, calculated_tx = spend_p2wpkh()
+    ion_assert(calculated_txid, expected_txid, "test_spend_p2wpkh / txid")
+
 # Spend a 2-of-2 multisig p2wsh utxo and return the txid
 def spend_p2wsh(txid: str) -> str: # def spend_p2wsh(state: object, txid: str) -> str:
     COIN_VALUE = 1000000
     FEE = 1000
     AMT = 0
+
+    utxo = {
+        "txid": bytes.fromhex(txid),
+        "n" : int(0),
+        "value" : int(COIN_VALUE),
+        "scriptPubKey" : "0020f5f1d8fadd33c6f37f0eb7a69ef0cc98e5939d893449aaaddf8fcba393476794"
+    }
+
+    # Here are the keys, not having to call state all the time
+    pub_0 = bytes.fromhex("0235e46cac834362fe6f6a6bed1b1424932f0bcd6f5bdec5b4422730749aca0c7b")
+    pub_1 = bytes.fromhex("02810bf1d5666343229f43d00de990de8053cf4f111dd0d98993c64980acd067fe")
     pri_0 = bytes(32)
     pri_1 = bytes(32)
 
-    # Create the input from the utxo
+    # 1. Input
+
     # Reverse the txid hash so it's little-endian
+    txid_bytes = bytes.fromhex(txid)
+    txid_bytes = reverse_endian(txid_bytes)
+
+    # Create the input from the utxo
+    input = input_from_utxo(txid_bytes, 0) #utxo['n'])
+
+    # 2. Output
 
     # Compute destination output script and output
+    nym_string = "ion- (aka itornaza)"    
+    nym_hex_string = ''.join(format(ord(c), '02x') for c in nym_string)
+    nym = bytes.fromhex(nym_hex_string)
+    null_witness_program = OP_RETURN + length(nym) + nym
+    output_1 = output_from_options(null_witness_program, 0)
 
-    # Compute change output script and output
+    # Compute change output script and output (from key 0)
+    p2wpkh_witness_program = get_p2wpkh_program(pub_0, 0)
+    change = utxo['value'] - AMT - FEE
+    output_2 = output_from_options(p2wpkh_witness_program, change)
+
+    # 3. sigHash and Witness
 
     # Get the message to sign
+    outpoint = txid_bytes + int_to_bytes(utxo['n'], 4)
 
-    # Sign!
+    # Scriptcode is length + multisig script
+    multisig_script = create_multisig_script([pub_0, pub_1])
+    scriptcode = length(multisig_script) + multisig_script
+    
+    value = utxo['value']
+    sighash = get_commitment_hash(outpoint, scriptcode, value, [output_1, output_2])
 
-    # Assemble
+    # Create a transaction witness with the signature and private keys
+    # Sign the digest with the private key for the coin we are spending!
+    p2wsh_witness = get_p2wsh_witness([pri_0, pri_1], sighash)
+
+    # 4. Serialize
+    final = assemble_transaction([input], [output_1, output_2], [p2wsh_witness])
 
     # For debugging you can use RPC: bitcoin-cli testmempoolaccept '["<final hex>"]'
-    
-    # return finalhex
-    pass
+    return final.hex()
 
 def test_suite():
     print("\nRunning test suite ...")
@@ -446,6 +481,7 @@ def test_suite():
     test_output_from_options()
     test_get_p2wpkh_scriptcode()
     test_get_commitment_hash()
+    test_txid()
     # test_get_key_index(state)
     print("Test suite - [ok]\n")
 
