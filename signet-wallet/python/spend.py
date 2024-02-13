@@ -434,7 +434,7 @@ def spend_p2wsh(txid: str) -> str: # def spend_p2wsh(state: object, txid: str) -
     txid_bytes = reverse_endian(txid_bytes)
 
     # Create the input from the utxo
-    input = input_from_utxo(txid_bytes, 0) #utxo['n'])
+    input = input_from_utxo(txid_bytes, utxo['n'])
 
     # 2. Output
 
@@ -455,7 +455,7 @@ def spend_p2wsh(txid: str) -> str: # def spend_p2wsh(state: object, txid: str) -
     # Get the message to sign
     outpoint = txid_bytes + int_to_bytes(utxo['n'], 4)
 
-    # Scriptcode is length + multisig script
+    # Scriptcode is length + multisig script (because there is no OP_CODESEPARATOR)
     multisig_script = create_multisig_script([pub_0, pub_1])
     scriptcode = length(multisig_script) + multisig_script
     
@@ -497,3 +497,4 @@ if __name__ == "__main__":
 
     tx2 = spend_p2wsh(txid1) # Original: `spend_p2wsh(state, txid1)`
     print(tx2)
+    
