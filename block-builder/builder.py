@@ -10,7 +10,7 @@ DEBUG = True
 MUTE = False
 MAX_BLOCK_SIZE = 4000000
 MEMPOOL_PATH = '../../mempool.csv'
-OUTPUT_PATH = '../../block.txt'
+OUTPUT_PATH = '../block.txt'
 
 class MempoolTransaction():
     def __init__(self, txid, fee, weight, parents):
