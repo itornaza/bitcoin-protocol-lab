@@ -6,11 +6,12 @@
 from operator import attrgetter
 
 # Constants
-DEBUG = True
+DEBUG = False
 MUTE = False
 MAX_BLOCK_SIZE = 4000000
-MEMPOOL_PATH = '../../mempool.csv'
-OUTPUT_PATH = '../block.txt'
+MEMPOOL_PATH_DEV = "../../mempool.csv"
+MEMPOOL_PATH = "mempool.csv"
+OUTPUT_PATH = "../block.txt"
 
 class MempoolTransaction():
     def __init__(self, txid, fee, weight, parents):
@@ -26,6 +27,7 @@ def parse_mempool_csv(path):
         return [MempoolTransaction(*line.strip().split(',')) for line in f.readlines()]
 
 def dump(mempool):
+    """Dump the contents of the mempool for debuging"""
     for tx in mempool:
         print(tx.txid, " ", 
                 tx.fee, " ", 
