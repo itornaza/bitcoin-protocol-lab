@@ -11,7 +11,7 @@ payment_request_hex="$2"
 current_block_height="$3"
 
 # Please fill in the version of the programming language you used here to help us with debugging if we run into problems!
-version="{Python 3.11.7}
+version="{Python 3.11.7}"
 
 # Check if the 'version' variable is not null
 if [ -z "$version" ]; then
