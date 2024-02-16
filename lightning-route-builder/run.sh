@@ -20,3 +20,5 @@ if [ -z "$version" ]; then
 fi
 
 # Your run command here:
+pip install bolt11
+
