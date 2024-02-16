@@ -19,6 +19,14 @@ if [ -z "$version" ]; then
     exit 1
 fi
 
+#-------------------------
 # Your run command here:
-pip install bolt11
+#-------------------------
 
+# Install python dependencies
+if ! python -c "import bolt11" &> /dev/null; then
+    pip install bolt11 
+fi
+
+# Run with the provided arguments
+python ln-route-builder.py "$input_file_path" "$payment_request_hex" "$current_block_height"
