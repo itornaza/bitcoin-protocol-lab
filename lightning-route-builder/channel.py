@@ -1,6 +1,6 @@
 #
-# channel.py
-# itornaza@gmail.com
+#  channel.py
+#  itornaza@gmail.com
 #
 
 class Channel:

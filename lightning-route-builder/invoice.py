@@ -1,6 +1,6 @@
 #
-# invoice.py
-# itornaza@gmail.com
+#  invoice.py
+#  itornaza@gmail.com
 #
 
 import bolt11

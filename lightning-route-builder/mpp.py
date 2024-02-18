@@ -1,6 +1,6 @@
 #
-# mpp.py
-# itornaza@gmail.com
+#  mpp.py
+#  itornaza@gmail.com
 #
 
 import csv
@@ -9,14 +9,17 @@ from channel import Channel
 
 class MPP:
 
+    # List of routes contained in the MPP 
     routes_ = []
+
+    # List of channels retreived from the csv file
     channels_ = []
 
     def __init__(self, file_path):
         """ Default constructor reads the csv files and groups the channels 
             into routes depending on their path_id value """
         
-        # Get the channels from the csv file
+        # 1. Get the channels from the csv file
         with open(file_path, newline='') as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
@@ -24,14 +27,14 @@ class MPP:
                                   row['base_fee_msat'], row['proportional_fee_ppm'])
                 self.channels_.append(channel)
         
-        # Create the number of empty routes that we are going to need
+        # 2. Create the number of empty routes that we are going to need
         max_route_channel = max(self.channels_, key=lambda Channel: Channel.path_id_)
         n_routes = int(max_route_channel.path_id_) + 1
         for i in range(n_routes):
             route = Route()
             self.routes_.append(route)
 
-        # Collect channels into the respective route 
+        # 3. Collect channels into the respective route 
         for channel in self.channels_:
             index = int(channel.path_id_)
             self.routes_[index].append(channel)

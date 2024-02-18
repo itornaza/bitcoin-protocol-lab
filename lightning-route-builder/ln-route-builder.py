@@ -1,8 +1,6 @@
 #
-# ln-route-builder.py
-# itornaza@gmail.com  
-#
-# Produce the HTLC values for a given route
+#  ln-route-builder.py
+#  itornaza@gmail.com  
 #
 
 import sys
@@ -15,12 +13,16 @@ def print_arguments():
     print(f"Current Block Height: {current_block_height}")
 
 if __name__ == "__main__":
+    
     # Get the parameters passed from run.sh
     if len(sys.argv) == 4:    
+        
         # Absolute path to a csv file containing a set of hops in a lightning network route
         input_file_path = sys.argv[1]
+        
         # bech32-encoded regtest payment request, which provides the details of the payment to be made over the route
         payment_request_bech32 = sys.argv[2]        
+        
         # Current block height, expressed as a uint32
         current_block_height = sys.argv[3]    
     else:
