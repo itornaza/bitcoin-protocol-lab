@@ -2,12 +2,12 @@
 # ln-route-builder.py
 # itornaza@gmail.com  
 #
-# - Produce the HTLC values for a given route.
+# Produce the HTLC values for a given route
 #
 
 import sys
 from invoice import Invoice
-from route import Route
+from mpp import MPP
 
 def print_arguments():
     print(f"Input File Path: {input_file_path}")
@@ -26,16 +26,21 @@ if __name__ == "__main__":
     else:
         raise Exception("ln-route-builder.py requires exactly 3 arguments")
     
+    # Get the MPP containing all the routes
+    mpp = MPP(input_file_path)
+
     # Get payment information from the invoice
     invoice = Invoice(payment_request_bech32)
+    expiry = invoice.get_min_final_cltv_expiry()
+    amount_msat = invoice.get_amount_msat()
+    payment_secret = invoice.get_payment_secret()
+    
+    # Split the amount to send with each route in the MPP
+    amount = int(amount_msat) / int(mpp.length())
 
-    # TODO, make a generic solution for all steps using a Routes class to parse the csv and
-    # assign each route in a list
-    # TODO Assign same path_id channels to a route
-    # TODO Divide the invoice amount with the higher (path_id number + 1)
-
-    # TODO: For each route
-    route = Route(input_file_path)
-    route.calculate_htlc_expiry(current_block_height, invoice.get_min_final_cltv_expiry())
-    route.calculate_htlc_fee(invoice.get_amount_msat())
-    route.print_htlc()
+    # Do the HTLV calculations for all the routes and print the results
+    for route in mpp.routes_:
+        route.calculate_htlc_expiry(current_block_height, expiry)
+        route.calculate_htlc_fee(amount)
+        route.calculate_tlv(payment_secret, amount_msat)
+        route.print_htlc()

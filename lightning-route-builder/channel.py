@@ -7,10 +7,10 @@ class Channel:
     
     # path_id: a uint32
     path_id_ = int(0)
-
+    
     # channel_name: a string identifying the channel
     channel_name_ = ""
-
+    
     # cltv_delta: a uint32 representing the required delta for the hop
     cltv_delta_ = int(0)
 
@@ -32,7 +32,8 @@ class Channel:
     # tlv: a string, hardcoded to NULL
     tlv_ = "NULL"
 
-    def __init__(self, path_id, channel_name, cltv_delta, base_fee_msat, proportional_fee_ppm):
+    def __init__(self, path_id, channel_name, cltv_delta, base_fee_msat, 
+                 proportional_fee_ppm):
         self.path_id_ = path_id
         self.channel_name_ = channel_name
         self.cltv_delta_ = cltv_delta
@@ -40,25 +41,22 @@ class Channel:
         self.proportional_fee_ppm_ = proportional_fee_ppm
 
     def calculate_htlc_expiry(self, predecessor: int):  
-        """ Using the routing policies of the channels provided, produce the values for the 
-            HTLCs that will be used to make a payment for the amount and block height 
-            provided """
+        """ Using the routing policies of the channels provided, produce the 
+            values for the HTLCs that will be used to make a payment for the 
+            amount and block height provided """
         self.htlc_expiry_ += int(self.cltv_delta_) + int(predecessor)
 
     def calculate_htlc_fee(self, amount: int):
-        """ Calculate fees as described in bolt7, using integer division
-            Assuming that payment requests will always have a non-zero amount specified"""
+        """ Calculate fees as described in bolt7, using integer division 
+            Assuming that payment requests will always have a non-zero amount
+            specified"""
         self.htlc_amount_msat_ = int(amount) + int(self.base_fee_msat_) + \
-                                 int(amount * int(self.proportional_fee_ppm_) / int(1000000))
+            int(amount * int(self.proportional_fee_ppm_) / int(1000000))
 
     def print(self):
         print(f"{self.path_id_},{self.channel_name_},{self.cltv_delta_},{self.base_fee_msat_},{self.proportional_fee_ppm_}")
 
     def print_htlc(self): 
-        """ Output the HTLC values for each hop to stdout
-            *** Sample output (trim all whitespace) ***
-            path_id, channel_name, htlc_amount_msat, htlc_expiry, tlv
-            0,AliceBob,amount,expiry,NULL
-            0,BobCarol,amount,expiry,NULL
-            0,CarolDave,amount,expiry,NULL """
+        """ Output the HTLC values for each hop to stdout and trim all 
+            whitespaces """
         print(f"{self.path_id_},{self.channel_name_},{self.htlc_amount_msat_},{self.htlc_expiry_},{self.tlv_}")
