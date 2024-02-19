@@ -5,7 +5,7 @@
 
 class Channel:
     
-    # path_id: a uint32
+    # path_id: a uint32 used in MPP
     path_id_ = int(0)
     
     # channel_name: a string identifying the channel
@@ -40,18 +40,20 @@ class Channel:
         self.base_fee_msat_ = base_fee_msat
         self.proportional_fee_ppm_ = proportional_fee_ppm
 
-    def calculate_htlc_expiry(self, predecessor: int):  
+    def calculate_htlc_expiry(self, prev_expiry: int):  
         """ Using the routing policies of the channels provided, produce the 
             values for the HTLCs that will be used to make a payment for the 
             amount and block height provided """
-        self.htlc_expiry_ += int(self.cltv_delta_) + int(predecessor)
+        self.htlc_expiry_ += int(self.cltv_delta_) + int(prev_expiry)
 
-    def calculate_htlc_fee(self, amount: int):
-        """ Calculate fees as described in bolt7, using integer division 
+    def calculate_htlc_fee(self, amount_to_forward: int, total_amount: int):
+        """ Calculates fees as described in bolt7, using integer division. 
             Assuming that payment requests will always have a non-zero amount
-            specified"""
-        self.htlc_amount_msat_ = int(amount) + int(self.base_fee_msat_) + \
-            int(amount * int(self.proportional_fee_ppm_) / int(1000000))
+            specified. Takes into account ACCUMULATED amount from other channels:
+            total_amount + base_fee_msat + amount_to_forward * ppm / 1000000 """
+        self.htlc_amount_msat_ = int(total_amount) + \
+                                 int(self.base_fee_msat_) + \
+            int(amount_to_forward) * int(self.proportional_fee_ppm_) // int(1000000)
 
     def print(self):
         print(f"{self.path_id_},{self.channel_name_},{self.cltv_delta_},{self.base_fee_msat_},{self.proportional_fee_ppm_}")
