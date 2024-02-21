@@ -72,10 +72,10 @@ class MPP:
         send with each route in the MPP amount divisible by the number of its 
         routes, enforced with integet division. If there are more than one 
         route, it adds the tlv field """
-        amount = invoice_amount // self.length()
+        partial_amount = invoice_amount // self.length()
         for route in self.routes_:
             route.set_expiry(height, expiry)
-            route.set_amount(amount)
+            route.set_amount(partial_amount)
             if self.length() > 1: 
                 route.set_tlv(secret, invoice_amount)
 
