@@ -6,12 +6,21 @@
 import sys
 from invoice import Invoice
 from mpp import MPP
+from channel import Channel
 
 # Constants
 ARGV_ERROR: str = "ln-route-builder.py requires exactly 3 arguments"
+RUN_TESTS: bool = False
+
+def test_suite():
+    Channel.test_set_tlv(Channel)
 
 if __name__ == "__main__":
     
+    # 0. Optionally run some basic tests first
+    if RUN_TESTS: 
+        test_suite()
+
     # 1. Grab the parameters passed from run.sh
     if len(sys.argv) == 4:    
         file_path = sys.argv[1]
@@ -29,3 +38,4 @@ if __name__ == "__main__":
     # 3. Create MPP and print results
     mpp = MPP(file_path, height, expiry, secret, invoice_amount)
     mpp.print()
+

@@ -42,6 +42,9 @@ class Channel:
     def get_expiry(self):
         return self.htlc_expiry_
     
+    def get_tlv(self):
+        return self.tlv_
+    
     #---------------
     # Mutators
     #---------------
@@ -64,11 +67,24 @@ class Channel:
     def set_tlv(self, secret: str, amount: int):
         """ Constructs and serializes the tlv """
         amount_msat_bytes = amount.to_bytes(8, byteorder=BIG_ENDIAN)
-        tlv_type_and_length= int(8).to_bytes(8)
+        tlv_type = (int(8)).to_bytes(8)
         tlv_body = bytes.fromhex(secret) + amount_msat_bytes
-        tlv_body_length = len(tlv_body).to_bytes(8)
-        tlv = tlv_type_and_length + tlv_body_length + tlv_body
+        tlv_body_length = (len(tlv_body)).to_bytes(8)
+        tlv = tlv_type + tlv_body_length + tlv_body
         self.tlv_ = tlv.hex()
+
+    def test_set_tlv(self):
+        # Get object state
+        orig_tlv = self.get_tlv(self)
+        # Execute test
+        expected = "00000000000000080000000000000028b3c3965128b05c96d76348158f8f3a1b92e2847172f9adebb400a9e83e62f0660000000000000078"
+        secret = "b3c3965128b05c96d76348158f8f3a1b92e2847172f9adebb400a9e83e62f066"
+        amount = 120
+        self.set_tlv(self, secret, amount)
+        calculated = self.get_tlv(self)
+        assert calculated == expected, "TLV not as expected"
+        # Reset initial object state
+        self.tlv_ = orig_tlv
 
     #---------------
     # Output
