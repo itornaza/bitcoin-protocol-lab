@@ -62,7 +62,6 @@ class Channel:
         self.htlc_amount_msat_ = amount    
 
     def set_tlv(self, secret: str, amount: int):
-        """ Constructs and serializes the tlv """
         tlv_type_bytes = b'\x00\x00\x00\x00\x00\x00\x00\x08'
         tlv_body_bytes = bytes.fromhex(secret) + amount.to_bytes(8, 'big')
         tlv_body_length = len(tlv_body_bytes)

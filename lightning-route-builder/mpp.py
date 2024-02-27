@@ -69,9 +69,9 @@ class MPP:
 
     def set(self, height, expiry, secret, invoice_amount):
         """ Performs all the calculations for the mpp. Splits the amount to 
-        send with each route in the MPP amount divisible by the number of its 
-        routes, enforced with integet division. If there are more than one 
-        route, it adds the tlv field """
+            send with each route in the MPP amount divisible by the number of its 
+            routes, enforced with integet division. If there are more than one 
+            route, it adds the tlv field """
         partial_amount = invoice_amount // self.length()
         for route in self.routes_:
             route.set_expiry(height, expiry)
