@@ -6,26 +6,14 @@
 from channel import Channel
 
 class Route:
-    
-    #---------------
-    # Variables
-    #---------------
 
-    channels_: list[Channel] = [] # List of channels contained in this route
-
-    #---------------
-    # Constructor
-    #---------------
+    channels_: list[Channel]
 
     def __init__(self):
         self.channels_ = []
-
-    #---------------
-    # Mutators
-    #---------------
         
     def set_expiry(self, height: int, min_ctlv: int):
-        expiry = height + min_ctlv
+        expiry: int = height + min_ctlv
         for i in range((len(self.channels_) - 1), -1, -1):
             self.channels_[i].set_expiry(expiry)
             expiry += self.channels_[i].get_cltv_delta()
@@ -40,10 +28,6 @@ class Route:
         
     def append(self, channel: Channel):
         self.channels_.append(channel)
-
-    #---------------
-    # Output
-    #---------------
     
     def print(self):
         for channel in self.channels_:
