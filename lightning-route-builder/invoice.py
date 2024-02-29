@@ -17,11 +17,11 @@ class Invoice:
         self.amount_msat_ = int(invoice_decoded.amount_msat)
         self.min_final_cltv_expiry_ = int(invoice_decoded.min_final_cltv_expiry)
         
-    def get_amount(self):
+    def get_amount(self) -> int:
         return self.amount_msat_
   
-    def get_min_cltv(self):
+    def get_min_cltv(self) -> int:
         return self.min_final_cltv_expiry_
   
-    def get_secret(self):
+    def get_secret(self) -> str:
         return self.payment_secret_

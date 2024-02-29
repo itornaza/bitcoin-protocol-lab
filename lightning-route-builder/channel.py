@@ -25,19 +25,19 @@ class Channel:
         self.htlc_expiry_ = 0
         self.tlv_ = "NULL"
 
-    def get_cltv_delta(self):
+    def get_cltv_delta(self) -> int:
         return self.cltv_delta_
 
-    def get_amount(self):
+    def get_amount(self) -> int:
         return self.htlc_amount_msat_
 
-    def get_fees(self, amount: int):
+    def get_fees(self, amount: int) -> int:
         return self.base_fee_msat_ + amount * self.proportional_fee_ppm_ // 1000000
 
-    def get_expiry(self):
+    def get_expiry(self) -> int:
         return self.htlc_expiry_
     
-    def get_tlv(self):
+    def get_tlv(self) -> int:
         return self.tlv_
         
     def set_expiry(self, expiry: int):  

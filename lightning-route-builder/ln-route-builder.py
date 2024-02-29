@@ -9,8 +9,8 @@ from mpp import MPP
 from channel import Channel
 
 # Constants
-ARGV_ERROR: str = "ln-route-builder.py requires exactly 3 arguments"
 RUN_TESTS: bool = False
+ARGV_ERROR: str = "ln-route-builder.py requires exactly 3 arguments"
 
 def test_suite():
     Channel.test_set_tlv(Channel)
