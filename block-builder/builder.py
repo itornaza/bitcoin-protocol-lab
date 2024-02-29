@@ -6,12 +6,11 @@
 from operator import attrgetter
 
 # Constants
-DEBUG = False
-MUTE = False
-MAX_BLOCK_SIZE = 4000000
-MEMPOOL_PATH_DEV = "../../mempool.csv"
-MEMPOOL_PATH = "mempool.csv"
-OUTPUT_PATH = "../block.txt"
+DEBUG: bool = False
+MAX_BLOCK_SIZE: int = 4000000
+MEMPOOL_PATH_DEV: str = "../../mempool.csv"
+MEMPOOL_PATH: str = "mempool.csv"
+OUTPUT_PATH: str = "../block.txt"
 
 class MempoolTransaction():
     def __init__(self, txid, fee, weight, parents):
@@ -30,10 +29,10 @@ def dump(mempool):
     """Dump the contents of the mempool for debuging"""
     for tx in mempool:
         print(tx.txid, " ", 
-                tx.fee, " ", 
-                tx.weight, " ", 
-                tx.parents, " ",
-                tx.rate)
+              tx.fee, " ", 
+              tx.weight, " ", 
+              tx.parents, " ",
+              tx.rate)
 
 def get_parents(txid, mempool):
     """Get the parents list for a given txid of the mempool"""
@@ -54,32 +53,32 @@ def print_to_file(txid):
 
 def get_max_rates(mempool):
     ordered_mempool = sorted(mempool, key=attrgetter('rate'), reverse=True)
-    if MUTE: dump(ordered_mempool)
-    block_reward = 0
-    block_weight = 0
-    skipped = 0
+    
+    block_reward: int = 0
+    block_weight: int = 0
+    skipped: int = 0
+    added: int = 0
+    
     for tx in ordered_mempool:
         if (block_weight + tx.weight) <= MAX_BLOCK_SIZE:
             if tx.parents == ['']:
                 block_reward += tx.fee
                 block_weight += tx.weight
                 print_to_file(tx.txid)
+                added += 1
             else:
                 skipped += 1
-                continue
-        else:
-            break
+
     if DEBUG: 
         print("Block reward: ", block_reward)
         print("Block weight: ", block_weight)
-        print("Skipped: ", skipped)
+        print("Added: ", added)
+        print("Skipped: ", skipped) 
+    
     return block_reward
 
 if __name__ == "__main__":
-    
-    # 1. Motherhood
+    path = MEMPOOL_PATH
     erase_output_file()
-    mempool = parse_mempool_csv(MEMPOOL_PATH)
-    if MUTE: dump(mempool)
+    mempool = parse_mempool_csv(path)
     block_reward = get_max_rates(mempool)
-
