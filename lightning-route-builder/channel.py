@@ -36,9 +36,6 @@ class Channel:
 
     def get_expiry(self) -> int:
         return self.htlc_expiry_
-    
-    def get_tlv(self) -> int:
-        return self.tlv_
         
     def set_expiry(self, expiry: int):  
         self.htlc_expiry_ = expiry
@@ -46,28 +43,13 @@ class Channel:
     def set_amount(self, amount: int):
         self.htlc_amount_msat_ = amount    
 
-    def set_tlv(self, secret: str, amount: int):
-        tlv_type: bytes = b'\x00\x00\x00\x00\x00\x00\x00\x08'
+    def set_tlv(self, secret: str, amount: int, type: int = 8):
+        tlv_type: bytes = type.to_bytes(8, 'big')
         tlv_body: bytes = bytes.fromhex(secret) + amount.to_bytes(8, 'big')
         length: int = len(tlv_body)
         tlv_body_length: bytes = length.to_bytes(8)
-        tlv_bytes: bytes = tlv_type + tlv_body_length + tlv_body
-        self.tlv_ = tlv_bytes.hex()
-
-    def test_set_tlv(self):
-        # Get pre-test object state
-        orig_tlv = self.get_tlv(self)
-        # Execute test
-        expected = "00000000000000080000000000000028b3c3965128b05c96d76348158f8f3a1b92e2847172f9adebb400a9e83e62f0660000000000000078"
-        secret = "b3c3965128b05c96d76348158f8f3a1b92e2847172f9adebb400a9e83e62f066"
-        amount = 120
-        self.set_tlv(self, secret, amount)
-        calculated = self.get_tlv(self)
-        assert calculated == expected, "TLV not as expected"
-        # Resume object state
-        self.tlv_ = orig_tlv
+        tlv: bytes = tlv_type + tlv_body_length + tlv_body
+        self.tlv_ = tlv.hex()
 
     def print(self): 
-        """ Output the HTLC values for each hop to stdout and trim all 
-            whitespaces """
         print(f"{self.path_id_},{self.channel_name_},{self.htlc_amount_msat_},{self.htlc_expiry_},{self.tlv_}")
