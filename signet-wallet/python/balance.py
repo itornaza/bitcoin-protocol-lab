@@ -1,5 +1,4 @@
 from decimal import Decimal
-from re import I
 from ecdsa import SigningKey, SECP256k1
 from subprocess import run
 from typing import List, Tuple
@@ -14,14 +13,13 @@ import json
 # Constants
 #--------------
 
-DEBUG = False
+DEBUG: bool = False
 
-WALLET_NAME = "wallet_201"
-EXTENDED_PRIVATE_KEY = "CHANGEME_EXTENDED_PRIVATE_KEY"
-KEY_BYTE_LENGTH = 32
-BYTE_ORDER = 'big'
-BTC2SAT = 100000000
-ORDER_N_OF_G = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+WALLET_NAME: str = "wallet_201"
+EXTENDED_PRIVATE_KEY: str = "CHANGEME_EXTENDED_PRIVATE_KEY"
+KEY_BYTE_LENGTH: int = 32
+BYTE_ORDER: str = 'big'
+BTC2SAT: int = 100000000
 
 #--------------
 # Utilities
@@ -110,7 +108,6 @@ def test_deserialize_key():
     pri = "CHANGEME_EXTENDED_PRIVATE_KEY"
     expected_key = "0000000000000000000000000000000000000000000000000000000000000001"
     expected_chain_code = "0000000000000000000000000000000000000000000000000000000000000000"
-
     # Calculate our own key
     pri = base58_decode(pri).hex()
     pri_bytes = bytes.fromhex(pri)
@@ -121,7 +118,6 @@ def test_deserialize_key():
     calculated_chain_code = data['chain_code']
     ion_assert(calculated_chain_code, expected_chain_code, "test_deserialize_key-chain_code")
     ion_assert(calculated_key, expected_key, "test_deserialize_key-key")
-    
 
 # Derive the secp256k1 compressed public key from a given private key
 # BONUS POINTS: Implement ECDSA yourself and multiply you key by the generator
@@ -143,7 +139,6 @@ def test_get_pub_from_priv():
 # Return a JSON object with "key" and "chain_code" properties as bytes
 # https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki#user-content-Private_parent_key_rarr_private_child_key
 def derive_priv_child(key: bytes, chain_code: bytes, index: int, hardened: bool) -> object:
-
     # Set up the index
     index = (int(0x80000000) + index) if hardened else index
     index_bytes = ion_int_to_bytes(index, 4)
@@ -162,7 +157,7 @@ def derive_priv_child(key: bytes, chain_code: bytes, index: int, hardened: bool)
     # Left 256 bits, derive the child pri
     left_256_int = int.from_bytes(output_512[:KEY_BYTE_LENGTH], byteorder=BYTE_ORDER)
     key_int = int.from_bytes(key, byteorder=BYTE_ORDER)
-    child_private_key_int = (left_256_int + key_int) % ORDER_N_OF_G
+    child_private_key_int = (left_256_int + key_int) % SECP256k1.order
     child_private_key = child_private_key_int.to_bytes(KEY_BYTE_LENGTH, byteorder=BYTE_ORDER)
 
     # Prepare for json
@@ -185,7 +180,6 @@ def test_derive_priv_child():
     calculated_chain_code = bytes.fromhex(calculated_data['chain_code'])
     ion_assert(calculated_pri.hex(), expected_normal, "test_derive_priv_child-normal-chain_code")
     ion_assert(calculated_chain_code.hex(), expected_chain_code, "test_derive_priv_child-normal-key")
-
     # Hardened - Test vector 1 (https://en.bitcoin.it/wiki/BIP_0032_TestVectors)
     pri = bytes.fromhex("e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35")
     chain_code = bytes.fromhex("873dff81c02f525623fd1fe5167eac3a55a049de3d314bb42ee227ffed37d508")
@@ -206,7 +200,6 @@ def test_derive_priv_child():
 # - My example would be for `84h/1h/0h/0/*` : [(84, True), (1, True), (0, True), (0, False)]
 # - The key in the function argument corresponds to the master (m)
 def get_wallet_privs(key: bytes, chain_code: bytes, path: List[Tuple[int, bool]]) -> List[bytes]:
-    
     # 1. Move through the path to locate the last parent
     current_key = key
     current_chain_code = chain_code
@@ -230,7 +223,6 @@ def get_wallet_privs(key: bytes, chain_code: bytes, path: List[Tuple[int, bool]]
         child_data = json.loads(child_json)
         child_key = bytes.fromhex(child_data['key'])
         children_keys.append(child_key)
-
     return children_keys
 
 def test_get_wallet_privs():
@@ -285,7 +277,6 @@ def bcli(cmd: str):
 # - Request blocks 0-310 from Bitcoin Core via RPC and scan all transactions
 # - Return a state object with all the derived keys and total wallet balance
 def recover_wallet_state(xprv: str):
-    
     #---------------------------------------------------------------
     # Generate all the keypairs and witness programs to search for
     #---------------------------------------------------------------
@@ -323,7 +314,6 @@ def recover_wallet_state(xprv: str):
     
     height = 310
     for h in range(0, height + 1):
-        
         # Block ops
         block_hash = bcli(f"getblockhash {h}")
         block = bcli(f"getblock {block_hash} 2")
@@ -362,7 +352,6 @@ def recover_wallet_state(xprv: str):
     for txid in state['utxo']:
         state['balance'] += state['utxo'][txid]['value']
     state['balance'] /= BTC2SAT
-    
     return state
 
 def test_suite():
@@ -380,5 +369,4 @@ def test_suite():
 #--------------
 
 if __name__ == "__main__":
-    # test_suite()
     print(f"{WALLET_NAME} {recover_wallet_state(EXTENDED_PRIVATE_KEY)['balance']}")
