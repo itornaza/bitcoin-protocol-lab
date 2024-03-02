@@ -8,7 +8,9 @@ from collections import Counter
 
 DEBUG: bool = False
 VERBOSE: bool = False
+
 MAX_BLOCK_SIZE: int = 4000000
+
 MEMPOOL_PATH_DEV: str = "../../mempool.csv"
 MEMPOOL_PATH_TEST: str = "../../test_mempool.csv"
 MEMPOOL_PATH: str = "mempool.csv"
@@ -23,19 +25,41 @@ class MempoolTransaction():
         self.rate = self.fee / self.weight
         self.mined = False
 
-def parse_mempool_csv(path):
+def parse_mempool_csv(path) -> list[MempoolTransaction]:
     """ Parse the CSV file and return a list of MempoolTransactions """
     with open(path) as f:
         return [MempoolTransaction(*line.strip().split(',')) for line in f.readlines()]
 
-def dump(mempool):
-    """ Dump the contents of the mempool for debuging """
-    for tx in mempool:
-        print(tx.txid, " ", tx.fee, " ", tx.weight, " ", tx.parents, " ", tx.rate)
+def erase_output_file():
+    """ Erase the contents of the file for a fresh run """
+    with open(OUTPUT_PATH, 'w') as file: 
+        pass
 
-def get_family(txid, mempool) -> list[MempoolTransaction]:
-    """ Get the family list for a given txid of the mempool in order, contains the
-        given txid as well as a family member
+def print_to_file(txid):
+    """ Append a txid in the file """
+    with open(OUTPUT_PATH, 'a') as f:
+        f.write(f"{txid}\n")
+
+def print_metrics(block_reward, block_weight, singles, families):
+    print("Block reward: ", block_reward)
+    print("Block weight: ", block_weight)
+    print("Singles: ", singles)
+    print("Families: ", families) 
+
+def test_find_duplicates(filename):
+    """ Test that there are no duplicates in the given file """
+    word_counts = Counter()
+    with open(filename, 'r') as file:
+        for line in file:
+            words = line.split()
+            word_counts.update(words)
+    duplicates = [word for word, count in word_counts.items() if count > 1]
+    if duplicates:
+        raise Exception("Duplicates found")
+
+def get_family(txid: str, mempool: list[MempoolTransaction]) -> list[MempoolTransaction]:
+    """ Returns the family list for a given txid of the mempool in ascending order i.e.
+        Ancestors first, childern later, contains the given txid as well
 
                             (ancestor) G
                                        |
@@ -45,8 +69,8 @@ def get_family(txid, mempool) -> list[MempoolTransaction]:
                                    |                  
                     (ancestor) I - H
     """
-    stack = [txid]
-    family = []
+    stack: list[str] = [txid]
+    family: list[MempoolTransaction] = []
     while len(stack) > 0:
         txid = stack.pop(0)
         for tx in mempool:
@@ -58,71 +82,58 @@ def get_family(txid, mempool) -> list[MempoolTransaction]:
             continue
     return family
 
-def remove_duplicates(list) -> list:
-    seen = set()
-    result = []
-    for item in list:
-        if item not in seen:
-            seen.add(item)
-            result.append(item)
-    return result
-
-def erase_output_file():
-    """ Erase the contents of the file for a fresh run """
-    with open(OUTPUT_PATH, 'w') as file: 
-        pass
-
-def print_to_file(txid):
-    """ Append a txid in the file """
-    with open(OUTPUT_PATH, 'a') as f:  # Appending to the file
-        f.write(f"{txid}\n")
-
-def get_max_rates(mempool):
+def build_block(mempool: list[MempoolTransaction]) -> int:
+    """ Fills the block.txt file with a selection of transactions with the goal 
+        of maximizing the fee for the miner """
     block_reward: int = 0
     block_weight: int = 0
-    singles: int = 0
+    singles: int = 0    
     families: int = 0
+    factor: float = 0.3
     
     ordered_mempool = sorted(mempool, key=attrgetter('rate'), reverse=True)
     for tx in ordered_mempool:
-
-        # Check whether a tx fits in our block
         if (block_weight + tx.weight) <= MAX_BLOCK_SIZE:
-            
-            # If the tx is a singleton and has not been yet included
             if (tx.parents == ['']) and (tx.mined == False):
+                
+                # The tx is a singleton and has not been yet included
                 tx.mined = True
                 block_reward += tx.fee
                 block_weight += tx.weight
                 print_to_file(tx.txid)
                 if VERBOSE: print(tx.txid)
                 singles += 1
-            
+
             else:
+                
+                # The tx belongs to a family
                 collective_fee: float = 0
                 collective_weight: float = 0
                 acceptable_rate: bool = True
                 
-                # Get all the family including the tx
+                # Get all the members of family inclusive
                 family = get_family(tx.txid, mempool)
+                
+                # Calculate fees and weights of the unmined members
                 for f in family:
-
-                    # Calculate fees and weights of the unmined members
                     if f.mined == False:
                         collective_fee += f.fee
                         collective_weight += f.weight
 
-                # Optimization option: Decide whether the family deserves inclusion in the block
+                # Brutal optimization decides whether the family deserves inclusion.
+                # If the unmined family members have a very low rate compared to 
+                # the current transaction, we do not accept it
                 if collective_weight != 0:
                     collective_rate = collective_fee / collective_weight
-                    if collective_rate < tx.rate * 0.2:
+                    if collective_rate < (tx.rate * factor):
                         acceptable_rate = False
 
-                # If we still have space for all the family
-                if (block_weight + collective_weight) <= MAX_BLOCK_SIZE and acceptable_rate:
+                # If we have space for all the family
+                if (block_weight + collective_weight) <= MAX_BLOCK_SIZE and \
+                    acceptable_rate:
+                    
+                    # Include the unmined members in the block
                     for f in family:
-
-                        # Include the unmined members in the block
                         if f.mined == False:
                             f.mined = True
                             block_reward += f.fee
@@ -132,30 +143,17 @@ def get_max_rates(mempool):
 
                     families += 1
 
-    if DEBUG: 
-        print("Block reward: ", block_reward)
-        print("Block weight: ", block_weight)
-        print("Singles: ", singles)
-        print("Families: ", families) 
-    
+    if DEBUG: print_metrics(block_reward, block_weight, singles, families)
     return block_reward
-
-def test_find_duplicates(filename):
-    word_counts = Counter()
-    with open(filename, 'r') as file:
-        for line in file:
-            words = line.split()
-            word_counts.update(words)
-    duplicates = [word for word, count in word_counts.items() if count > 1]
-    if duplicates:
-        raise Exception("Duplicates found")
 
 if __name__ == "__main__":
     
-    # Set path = MEMPOOL_PATH and DEBUG, VERBOSE = False before submitting
+    # Before pushing as submission, set the global constants to:
+    # path = MEMPOOL_PATH and 
+    # DEBUG, VERBOSE = False
     path = MEMPOOL_PATH
     
     erase_output_file()
     mempool = parse_mempool_csv(path)
-    block_reward = get_max_rates(mempool)
+    block_reward = build_block(mempool)
     if DEBUG: test_find_duplicates(OUTPUT_PATH)
