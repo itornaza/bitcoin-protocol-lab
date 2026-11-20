@@ -1,6 +1,5 @@
 #
 # builder.py
-# itornaza@gmail.com  
 #
 
 from operator import attrgetter
