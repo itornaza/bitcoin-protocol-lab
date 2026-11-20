@@ -1,5 +1,2 @@
-# PYTHON
-python ./python/spend.py
-
-
-
+#!/bin/bash
+python ./python/spend.py "$@"

@@ -5,6 +5,8 @@ from typing import List, Tuple
 import hashlib
 import hmac
 import json
+import os
+import sys
 
 
 
@@ -15,11 +17,31 @@ import json
 
 DEBUG: bool = False
 
-WALLET_NAME: str = "wallet_201"
-EXTENDED_PRIVATE_KEY: str = "CHANGEME_EXTENDED_PRIVATE_KEY"
 KEY_BYTE_LENGTH: int = 32
 BYTE_ORDER: str = 'big'
 BTC2SAT: int = 100000000
+
+# Published BIP-32 test vector 1 master xprv (https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki)
+BIP32_TV1_XPRV: str = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi"
+BIP32_TV1_PAYLOAD: str = "0488ade4000000000000000000873dff81c02f525623fd1fe5167eac3a55a049de3d314bb42ee227ffed37d50800e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35"
+BIP32_TV1_KEY: str = "e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35"
+BIP32_TV1_CHAIN_CODE: str = "873dff81c02f525623fd1fe5167eac3a55a049de3d314bb42ee227ffed37d508"
+
+
+def load_wallet_config() -> tuple[str, str]:
+    """Read the wallet name and extended private key from argv or the environment."""
+    xprv = os.environ.get("EXTENDED_PRIVATE_KEY", "")
+    name = os.environ.get("WALLET_NAME", "wallet")
+    if len(sys.argv) >= 2:
+        xprv = sys.argv[1]
+    if len(sys.argv) >= 3:
+        name = sys.argv[2]
+    if not xprv:
+        raise SystemExit(
+            "Usage: balance.py <extended_private_key> [wallet_name]\n"
+            "Or set EXTENDED_PRIVATE_KEY and optional WALLET_NAME."
+        )
+    return name, xprv
 
 #--------------
 # Utilities
@@ -67,7 +89,6 @@ def base58_decode(base58_string: str) -> bytes:
     sha256_hash2 = hashlib.sha256(sha256_hash1).digest()
     sha256_hash2 = sha256_hash2[0:4]
 
-    # BONUS POINTS: Verify the checksum!
     if sha256_hash2 != checksum:
         raise Exception("\n->Failed: Checksums do not match!\n")
 
@@ -75,10 +96,9 @@ def base58_decode(base58_string: str) -> bytes:
     return bytes(result)
 
 def test_base58_decode():
-    # Test case (https://privatekeys.pw/calc)
-    expected = "043583940000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001"
-    calculated = base58_decode(EXTENDED_PRIVATE_KEY).hex()
-    ion_assert(calculated, expected, "test_base58_decode")
+    # BIP-32 test vector 1
+    calculated = base58_decode(BIP32_TV1_XPRV).hex()
+    ion_assert(calculated, BIP32_TV1_PAYLOAD, "test_base58_decode")
 
 # Deserialize the extended key bytes and return a JSON object
 # https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki#serialization-format
@@ -104,24 +124,14 @@ def deserialize_key(b: bytes) -> object:
     return json_object
 
 def test_deserialize_key():
-    # Get our own key derived data using (https://bip32jp.github.io/english/)
-    pri = "CHANGEME_EXTENDED_PRIVATE_KEY"
-    expected_key = "0000000000000000000000000000000000000000000000000000000000000001"
-    expected_chain_code = "0000000000000000000000000000000000000000000000000000000000000000"
-    # Calculate our own key
-    pri = base58_decode(pri).hex()
-    pri_bytes = bytes.fromhex(pri)
+    # BIP-32 test vector 1
+    pri_bytes = bytes.fromhex(base58_decode(BIP32_TV1_XPRV).hex())
     json_object = deserialize_key(pri_bytes)
     data = json.loads(json_object)
-    calculated_key_bytes = bytes.fromhex(data['key'])
-    calculated_key = calculated_key_bytes.hex()
-    calculated_chain_code = data['chain_code']
-    ion_assert(calculated_chain_code, expected_chain_code, "test_deserialize_key-chain_code")
-    ion_assert(calculated_key, expected_key, "test_deserialize_key-key")
+    ion_assert(data['chain_code'], BIP32_TV1_CHAIN_CODE, "test_deserialize_key-chain_code")
+    ion_assert(data['key'], BIP32_TV1_KEY, "test_deserialize_key-key")
 
 # Derive the secp256k1 compressed public key from a given private key
-# BONUS POINTS: Implement ECDSA yourself and multiply you key by the generator
-# point!
 def get_pub_from_priv(priv: bytes) -> bytes:
     signing_key = SigningKey.from_string(priv, curve=SECP256k1)
     public_key = signing_key.get_verifying_key()
@@ -282,7 +292,7 @@ def recover_wallet_state(xprv: str):
     #---------------------------------------------------------------
 
     # Extract the pri and chain_code from the given extended private key
-    key_json = deserialize_key(base58_decode(EXTENDED_PRIVATE_KEY))
+    key_json = deserialize_key(base58_decode(xprv))
     key_data = json.loads(key_json)
     pri = bytes.fromhex(key_data['key'])
     chain_code = bytes.fromhex(key_data['chain_code'])
@@ -369,4 +379,5 @@ def test_suite():
 #--------------
 
 if __name__ == "__main__":
-    print(f"{WALLET_NAME} {recover_wallet_state(EXTENDED_PRIVATE_KEY)['balance']}")
+    wallet_name, extended_private_key = load_wallet_config()
+    print(f"{wallet_name} {recover_wallet_state(extended_private_key)['balance']}")

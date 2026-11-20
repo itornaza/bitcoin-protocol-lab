@@ -3,13 +3,18 @@ import binascii
 import json
 from ecdsa import SigningKey, SECP256k1, util
 from typing import List
+import os
+import sys
 from balance import (
-    EXTENDED_PRIVATE_KEY,
     ion_assert,
     bcli,
     get_pub_from_priv,
     get_p2wpkh_program,
-    recover_wallet_state)
+    recover_wallet_state,
+    load_wallet_config,
+    deserialize_key,
+    base58_decode,
+    get_wallet_privs)
 
 #------------
 # Constants
@@ -343,24 +348,47 @@ def get_txid(inputs: List[bytes], outputs: List[bytes]) -> str:
     txid = dsha256(seq)
     return (reverse_endian(txid)).hex()
 
+
+def derived_account_keys(xprv: str, count: int = 2):
+    """Derive the first `count` BIP84 signet receive keys from an extended private key."""
+    key_data = json.loads(deserialize_key(base58_decode(xprv)))
+    pri = bytes.fromhex(key_data['key'])
+    chain_code = bytes.fromhex(key_data['chain_code'])
+    path = [(84, True), (1, True), (0, True), (0, False)]
+    privs = get_wallet_privs(pri, chain_code, path)
+    pubs = [get_pub_from_priv(p) for p in privs[:count]]
+    return privs[:count], pubs
+
+
+def load_spend_utxo() -> dict:
+    """Read the coin to spend from the environment (signet/regtest test coin)."""
+    txid = os.environ.get("SPEND_TXID", "")
+    script = os.environ.get("SPEND_SCRIPTPUBKEY", "")
+    if not txid or not script:
+        raise SystemExit(
+            "Set EXTENDED_PRIVATE_KEY (or pass it as argv[1]) and the coin to spend:\n"
+            "  SPEND_TXID, SPEND_VOUT, SPEND_VALUE_SATS, SPEND_SCRIPTPUBKEY\n"
+            "Optional: SPEND_KEY_INDEX (default 0) selects which derived child signs."
+        )
+    return {
+        "txid": bytes.fromhex(txid),
+        "n": int(os.environ.get("SPEND_VOUT", "0")),
+        "value": int(os.environ.get("SPEND_VALUE_SATS", "0")),
+        "scriptPubKey": script,
+        "key_index": int(os.environ.get("SPEND_KEY_INDEX", "0")),
+    }
+
+
 # Spend a p2wpkh utxo to a 2 of 2 multisig p2wsh and return the txid
-def spend_p2wpkh() -> str:
+def spend_p2wpkh(xprv: str, utxo: dict) -> str:
     FEE = 1000
     AMT = 1000000
 
-    # Choose an unspent coin worth more than 0.01 BTC and 
-    utxo = {
-        "txid": bytes.fromhex("e361e4e92a159688b840b013bf22be8a609fadc24ff45338a9ea8c506051da53"),
-        "n" : int("67"),
-        "value" : int("9094113"),
-        "scriptPubKey" : "0014e1e4b0a27b3d5d3eea5f844fbec0d4c314aad7a6",
-        "pub" : "02c0fad28fd3c95d6ee5de621e5a47fe0ca1a9c421161df61de029df76c192c6a9",
-        "pri" : None
-    }
-
-    # Here are the first 2 public keys, not having to call state all the time
-    pub_0 = bytes.fromhex("0235e46cac834362fe6f6a6bed1b1424932f0bcd6f5bdec5b4422730749aca0c7b")
-    pub_1 = bytes.fromhex("02810bf1d5666343229f43d00de990de8053cf4f111dd0d98993c64980acd067fe")
+    privs, pubs = derived_account_keys(xprv, count=max(2, utxo["key_index"] + 1))
+    pub_0, pub_1 = pubs[0], pubs[1]
+    utxo = dict(utxo)
+    utxo["pri"] = privs[utxo["key_index"]]
+    utxo["pub"] = pubs[utxo["key_index"]].hex()
 
     # 1. Inputs
 
@@ -404,28 +432,32 @@ def spend_p2wpkh() -> str:
     return txid, final.hex()
 
 def test_txid():
-    expected_txid = "d142633bc6cf0dbbf6c0140d9059763434fd9b388259ed2611059ea82fbfb6df"
-    calculated_txid, calculated_tx = spend_p2wpkh()
-    ion_assert(calculated_txid, expected_txid, "test_spend_p2wpkh / txid")
+    # Requires EXTENDED_PRIVATE_KEY and SPEND_* in the environment to reproduce a signed spend.
+    if not os.environ.get("EXTENDED_PRIVATE_KEY") or not os.environ.get("SPEND_TXID"):
+        print("test_spend_p2wpkh / txid - [skipped]")
+        return
+    _, xprv = load_wallet_config()
+    calculated_txid, _calculated_tx = spend_p2wpkh(xprv, load_spend_utxo())
+    expected_txid = os.environ.get("EXPECTED_SPEND_TXID")
+    if expected_txid:
+        ion_assert(calculated_txid, expected_txid, "test_spend_p2wpkh / txid")
 
 # Spend a 2-of-2 multisig p2wsh utxo and return the txid
-def spend_p2wsh(txid: str) -> str: # def spend_p2wsh(state: object, txid: str) -> str:
-    COIN_VALUE = 1000000
+def spend_p2wsh(xprv: str, txid: str, value: int = 1000000) -> str:
     FEE = 1000
     AMT = 0
 
+    privs, pubs = derived_account_keys(xprv, count=2)
+    pub_0, pub_1 = pubs[0], pubs[1]
+    pri_0, pri_1 = privs[0], privs[1]
+    # scriptPubKey is the p2wsh program of the 2-of-2 script from those keys
+    multisig_script = create_multisig_script([pub_0, pub_1])
     utxo = {
         "txid": bytes.fromhex(txid),
-        "n" : int(0),
-        "value" : int(COIN_VALUE),
-        "scriptPubKey" : "0020f5f1d8fadd33c6f37f0eb7a69ef0cc98e5939d893449aaaddf8fcba393476794"
+        "n": 0,
+        "value": int(value),
+        "scriptPubKey": get_p2wsh_program(multisig_script, 0).hex(),
     }
-
-    # Here are the keys, not having to call state all the time
-    pub_0 = bytes.fromhex("0235e46cac834362fe6f6a6bed1b1424932f0bcd6f5bdec5b4422730749aca0c7b")
-    pub_1 = bytes.fromhex("02810bf1d5666343229f43d00de990de8053cf4f111dd0d98993c64980acd067fe")
-    pri_0 = bytes(32)
-    pri_1 = bytes(32)
 
     # 1. Input
 

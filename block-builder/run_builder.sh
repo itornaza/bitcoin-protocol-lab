@@ -1,2 +1,2 @@
-# PYTHON
-python ./builder.py
+#!/bin/bash
+python ./builder.py "$@"

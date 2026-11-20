@@ -5,16 +5,15 @@
 
 from operator import attrgetter
 from collections import Counter
+import sys
 
 DEBUG: bool = False
 VERBOSE: bool = False
 
 MAX_BLOCK_SIZE: int = 4000000
 
-MEMPOOL_PATH_DEV: str = "../../mempool.csv"
-MEMPOOL_PATH_TEST: str = "../../test_mempool.csv"
 MEMPOOL_PATH: str = "mempool.csv"
-OUTPUT_PATH: str = "../block.txt"
+OUTPUT_PATH: str = "block.txt"
 
 class MempoolTransaction():
     def __init__(self, txid, fee, weight, parents):
@@ -147,12 +146,8 @@ def build_block(mempool: list[MempoolTransaction]) -> int:
     return block_reward
 
 if __name__ == "__main__":
-    
-    # Before pushing as submission, set the global constants to:
-    # path = MEMPOOL_PATH and 
-    # DEBUG, VERBOSE = False
-    path = MEMPOOL_PATH
-    
+    path = sys.argv[1] if len(sys.argv) > 1 else MEMPOOL_PATH
+
     erase_output_file()
     mempool = parse_mempool_csv(path)
     block_reward = build_block(mempool)

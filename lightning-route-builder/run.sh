@@ -1,32 +1,16 @@
 #!/bin/bash
-# Check if three arguments are provided
+# Usage: ./run.sh <route.csv> <bolt11_invoice> <current_block_height>
 if [ "$#" -ne 3 ]; then
-    echo "Usage: $0 <input_file_path> <payment_request_hex> <current_block_height>"
+    echo "Usage: $0 <input_file_path> <bolt11_invoice> <current_block_height>"
     exit 1
 fi
 
-# Assign arguments to variables
 input_file_path="$1"
-payment_request_hex="$2"
+payment_request="$2"
 current_block_height="$3"
 
-# Please fill in the version of the programming language you used here to help us with debugging if we run into problems!
-version="{Python 3.11.7}"
-
-# Check if the 'version' variable is not null
-if [ -z "$version" ]; then
-    echo "Please fill in the version of the programming language you used."
-    exit 1
-fi
-
-#-------------------------
-# Your run command here:
-#-------------------------
-
-# Install python dependencies
 if ! python -c "import bolt11" &> /dev/null; then
-    pip install bolt11 
+    pip install bolt11
 fi
 
-# Run with the provided arguments
-python ln-route-builder.py "$input_file_path" "$payment_request_hex" "$current_block_height"
+python ln-route-builder.py "$input_file_path" "$payment_request" "$current_block_height"
