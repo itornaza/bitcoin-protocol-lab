@@ -1,0 +1,4 @@
+path_id,channel_name,cltv_delta,base_fee_msat,proportional_fee_ppm
+0,alpha,30,1500,25
+0,beta,40,0,100
+0,gamma,20,800,50
